@@ -1,0 +1,21 @@
+# Configuración de cargo-about para THIRD_PARTY_LICENSES.txt (ver tools/gen_third_party_licenses.py).
+# Solo se listan las crates que acaban ENLAZADAS en miel.exe para Windows x64: sin dependencias de
+# desarrollo ni de compilación (tauri-build, etc.), que no se redistribuyen.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "MPL-2.0",
+    "BSD-3-Clause",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+    "MIT-0",
+]
+targets = ["x86_64-pc-windows-msvc"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# La crate propia de Miel (publish = false) no es un tercero: se ignora.
+private = { ignore = true }

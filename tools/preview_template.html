@@ -1,0 +1,390 @@
+<title>Miel, la abeja</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Hoja de modelo: escenario protagonista a la izquierda, mando a la derecha;
+   debajo, cada estado en una tarjeta con mitad sobre fondo claro y mitad sobre fondo oscuro. */
+:root {
+  --bg: #EDF0F3;
+  --surface: #FFFFFF;
+  --fg: #2A2320;
+  --muted: #655F5A;
+  --line: #D5DAE0;
+  --accent: #B25F00;
+  --on-accent: #FFFFFF;
+  --chip: #E3E8EE;
+  --code-bg: #F5F7F9;
+  /* escenarios fijos: demuestran la abeja sobre ambos fondos sin importar el tema de la página */
+  --stage-light: #F7F8FA;
+  --stage-light-dot: #D8DDE4;
+  --stage-dark: #1B1E24;
+  --stage-dark-dot: #2C313A;
+  --stage-light-fg: #5B554F;
+  --stage-dark-fg: #B9B2AA;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171B; --surface: #1D2127; --fg: #F2ECE6; --muted: #A9A199; --line: #2D333B;
+    --accent: #F7B538; --on-accent: #2A1D10; --chip: #272D35; --code-bg: #161A1F;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171B; --surface: #1D2127; --fg: #F2ECE6; --muted: #A9A199; --line: #2D333B;
+  --accent: #F7B538; --on-accent: #2A1D10; --chip: #272D35; --code-bg: #161A1F;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 64px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.1; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2.6rem, 8vw, 4.2rem); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 1.55rem; font-weight: 800; letter-spacing: -0.01em; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.mono { font-family: var(--font-mono); font-size: 0.85em; }
+.muted { color: var(--muted); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+/* Cabecera */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 32px; }
+.top .lead { max-width: 52ch; color: var(--muted); margin-top: 10px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.fact { background: var(--chip); border-radius: 999px; padding: 4px 12px; font-size: 0.82rem; font-weight: 500; }
+
+/* Laboratorio */
+.lab { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: stretch; }
+.stage {
+  position: relative; border-radius: 20px; min-height: 420px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 32px 16px 20px;
+  background-color: var(--stage-light);
+  background-image: radial-gradient(var(--stage-light-dot) 1.2px, transparent 1.3px);
+  background-size: 22px 22px; color: var(--stage-light-fg);
+  border: 1px solid var(--line);
+}
+.stage[data-bg="dark"] { background-color: var(--stage-dark); background-image: radial-gradient(var(--stage-dark-dot) 1.2px, transparent 1.3px); color: var(--stage-dark-fg); }
+#rig { --size: 256px; display: grid; place-items: center; height: calc(var(--size) * 1.35); width: 100%; }
+#rig svg { width: var(--size); height: var(--size); display: block; }
+.cap { text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.cap b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 800; }
+.cap span { font-size: 0.9rem; }
+.stage.calm .bee, .stage.calm .bee * { animation: none !important; transition: none !important; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.group { display: flex; flex-direction: column; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip, .seg button {
+  font: inherit; font-size: 0.92rem; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent; background: var(--chip); color: var(--fg);
+  padding: 7px 14px; border-radius: 999px; min-height: 38px;
+}
+.chip:hover, .seg button:hover { border-color: var(--line); }
+.chip[aria-pressed="true"], .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; cursor: pointer; min-height: 32px; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+dl.spec { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; padding-top: 18px; border-top: 1px solid var(--line); font-size: 0.9rem; }
+dl.spec dt { color: var(--muted); }
+dl.spec dd { margin: 0; font-family: var(--font-mono); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+/* Estados */
+.sec-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.sec-head p { color: var(--muted); max-width: 62ch; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.card header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.card header .mono { color: var(--muted); }
+.half { display: flex; align-items: flex-end; justify-content: center; gap: 14px; padding: 14px 8px 12px; }
+.half.l { background: var(--stage-light); }
+.half.d { background: var(--stage-dark); }
+.half img { display: block; flex: none; }
+
+/* Paleta */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: 12px; }
+.sw { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; text-align: left; font: inherit; color: inherit; padding: 0; cursor: pointer; }
+.sw .col { height: 64px; border-bottom: 1px solid var(--line); }
+.sw .meta { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.sw .meta b { font-size: 0.9rem; }
+.sw .meta .mono { color: var(--muted); }
+.sw .meta small { color: var(--muted); font-size: 0.78rem; line-height: 1.35; }
+.sw .copied { color: var(--accent); font-weight: 600; }
+
+/* Conceptos */
+.concepts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.concept { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.concept.pick { border: 2px solid var(--accent); }
+.tag { align-self: flex-start; background: var(--accent); color: var(--on-accent); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 10px; border-radius: 999px; }
+.concept ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 0.93rem; }
+.minisw { display: flex; gap: 6px; }
+.minisw i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); display: block; }
+
+/* Reglas e integración */
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 24px; }
+.two > div { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.rules { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; }
+.files { font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.7; }
+.note { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; max-width: 78ch; }
+
+@media (max-width: 860px) {
+  .lab { grid-template-columns: minmax(0, 1fr); }
+  .stage { min-height: 380px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Mascota de escritorio · SVG 2D</p>
+      <h1>Miel</h1>
+      <p class="lead">Una abeja original que flota en el escritorio, con ocho estados, parpadeo, aleteo y antenas con vida propia. Se ve igual de bien sobre fondo claro y oscuro.</p>
+    </div>
+    <div class="facts" aria-label="Datos del diseño">
+      <span class="fact">viewBox 128 × 128</span>
+      <span class="fact">11 colores</span>
+      <span class="fact">8 estados</span>
+      <span class="fact">0 recursos externos</span>
+    </div>
+  </header>
+
+  <section class="lab" aria-label="Demostración animada">
+    <div class="stage" id="stage" data-bg="light">
+      <div id="rig"><!--__RIG__--></div>
+      <div class="cap" aria-live="polite"><b id="capName">Idle</b><span id="capLabel">flotando tranquila</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="group">
+        <span class="eyebrow">Estado</span>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="group">
+        <span class="eyebrow">Tamaño en pantalla</span>
+        <div class="seg" id="sizes">
+          <button type="button" data-v="64" aria-pressed="false">64 px</button>
+          <button type="button" data-v="96" aria-pressed="false">96 px</button>
+          <button type="button" data-v="128" aria-pressed="false">128 px</button>
+          <button type="button" data-v="256" aria-pressed="true">256 px</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="eyebrow">Fondo del escenario</span>
+        <div class="seg" id="bgs">
+          <button type="button" data-v="light" aria-pressed="true">Claro</button>
+          <button type="button" data-v="dark" aria-pressed="false">Oscuro</button>
+        </div>
+      </div>
+      <div class="group">
+        <label class="check" for="cycle"><input type="checkbox" id="cycle" checked> Recorrido automático por los estados</label>
+        <label class="check" for="calm"><input type="checkbox" id="calm"> Simular movimiento reducido</label>
+      </div>
+      <dl class="spec" id="spec"></dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Los ocho estados</h2>
+      <p>Misma silueta, mismos colores y misma estructura en todos. Cada tarjeta muestra el archivo estático a 128, 96 y 64 px sobre fondo claro y oscuro.</p>
+    </div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Paleta</h2>
+      <p>Tocar un color copia su código.</p>
+    </div>
+    <div class="swatches" id="swatches"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Tres conceptos, uno elegido</h2>
+      <p>Se evaluaron por personalidad, silueta, facilidad de animación y legibilidad a 64 px.</p>
+    </div>
+    <div class="concepts">
+      <article class="concept pick">
+        <span class="tag">Elegido</span>
+        <h3>A · Gota de miel</h3>
+        <p class="muted">Tierna, atenta y discreta. Gota redondeada con la punta inclinada y la panza hacia un lado.</p>
+        <div class="minisw" aria-label="Colores"><i style="background:#F7B538"></i><i style="background:#3B2A21"></i><i style="background:#FFF1CC"></i></div>
+        <ul>
+          <li>Pelusa festoneada, antena con punta hexagonal, halo claro</li>
+          <li>Capas independientes: animar es sencillo</li>
+          <li>64 px: legibilidad alta, rostro con espacio para ocho expresiones</li>
+        </ul>
+      </article>
+      <article class="concept">
+        <h3>B · Pompón</h3>
+        <p class="muted">Esponjosa y juguetona. Esfera peluda de borde irregular, ojos puntuales.</p>
+        <div class="minisw" aria-label="Colores"><i style="background:#FFC93C"></i><i style="background:#5A3E2B"></i><i style="background:#FFF4D9"></i></div>
+        <ul>
+          <li>Mechón rebelde y textura de pelusa</li>
+          <li>Squash fácil, pero el borde peludo se anima con dificultad</li>
+          <li>64 px: el borde se difumina y la cara tiene poco rango</li>
+        </ul>
+      </article>
+      <article class="concept">
+        <h3>C · Pétalo</h3>
+        <p class="muted">Elegante y ágil. Cuerpo alargado, alas grandes en forma de hoja, formas angulares.</p>
+        <div class="minisw" aria-label="Colores"><i style="background:#F2A900"></i><i style="background:#2E2A3B"></i><i style="background:#BDE3F0"></i></div>
+        <ul>
+          <li>Contraste ámbar con índigo</li>
+          <li>Aleteo muy expresivo, rotaciones delicadas</li>
+          <li>64 px: la cara es pequeña y las expresiones se pierden</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="two">
+    <div>
+      <h2>Reglas del personaje</h2>
+      <ol class="rules">
+        <li>Un solo cuerpo en forma de gota; lo que cambia entre estados es la pose, no el dibujo.</li>
+        <li>Ojo derecho un poco más grande que el izquierdo.</li>
+        <li>Firma visual: pelusa crema bajo la cara y antena izquierda con punta hexagonal.</li>
+        <li>Dos rayas, nunca más. Sin degradados: una sombra plana y un brillo plano.</li>
+        <li>Halo claro alrededor del cuerpo, antenas y patas para fondos oscuros.</li>
+        <li>Movimiento ligero. Con <span class="mono">prefers-reduced-motion</span> se detiene todo.</li>
+      </ol>
+    </div>
+    <div>
+      <h2>Integración en React</h2>
+      <p class="muted">Un solo SVG maestro con los ocho rostros; basta cambiar <span class="mono">data-state</span>.</p>
+<pre><code>import BeeRig from '@/assets/bee/bee-rig.svg?react';
+
+export type BeeState = 'idle' | 'happy' | 'curious' | 'thinking'
+  | 'sleepy' | 'surprised' | 'talking' | 'resting';
+
+export function Bee({ state = 'idle', size = 96 }:
+  { state?: BeeState; size?: number }) {
+  return &lt;BeeRig data-state={state}
+    width={size} height={size} /&gt;;
+}</code></pre>
+      <p class="files">assets/bee/<br>&nbsp;&nbsp;bee-idle.svg … bee-resting.svg<br>&nbsp;&nbsp;bee-rig.svg · bee.css · palette.json</p>
+    </div>
+  </section>
+
+  <p class="note">Diseño construido desde cero con curvas propias, sin imágenes, fuentes ni iconos de terceros. Esto no garantiza la ausencia de conflictos de propiedad intelectual: antes de una distribución amplia conviene revisar similitudes con mascotas existentes y el nombre «Miel».</p>
+</div>
+
+<script>
+(function () {
+  var STATES = /*__STATES__*/null;
+  var URIS = /*__URIS__*/null;
+  var PALETTE = /*__PALETTE__*/null;
+  var ORDER = ["idle", "happy", "curious", "thinking", "sleepy", "surprised", "talking", "resting"];
+  var rig = document.querySelector("#rig svg");
+  var stage = document.getElementById("stage");
+  var current = "idle";
+  var timer = null;
+
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  /* Chips de estado */
+  var chips = document.getElementById("chips");
+  ORDER.forEach(function (s) {
+    var b = el("button", "chip", cap(s));
+    b.type = "button"; b.dataset.v = s; b.setAttribute("aria-pressed", s === current ? "true" : "false");
+    b.addEventListener("click", function () { stopCycle(); setState(s); });
+    chips.appendChild(b);
+  });
+
+  function setState(s) {
+    current = s;
+    rig.dataset.state = s;
+    Array.prototype.forEach.call(chips.children, function (b) { b.setAttribute("aria-pressed", b.dataset.v === s ? "true" : "false"); });
+    var d = STATES[s];
+    document.getElementById("capName").textContent = cap(s);
+    document.getElementById("capLabel").textContent = d.label;
+    var spec = document.getElementById("spec");
+    spec.textContent = "";
+    var rows = [
+      ["Inclinación", (d.rot > 0 ? "+" : "") + d.rot + "°"],
+      ["Aleteo", d.amp > 0 ? "±" + d.amp + "° cada " + d.dur + " s" : "alas plegadas"],
+      ["Flotación", d.fl > 0 ? "±" + d.fl + " u cada " + d.fd + " s" : "asentada"]
+    ];
+    rows.forEach(function (r) { spec.appendChild(el("dt", null, r[0])); spec.appendChild(el("dd", null, r[1])); });
+  }
+
+  /* Recorrido automático */
+  var cycle = document.getElementById("cycle");
+  function stopCycle() { cycle.checked = false; clearInterval(timer); timer = null; }
+  function startCycle() {
+    clearInterval(timer);
+    timer = setInterval(function () { setState(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length]); }, 3600);
+  }
+  cycle.addEventListener("change", function () { cycle.checked ? startCycle() : (clearInterval(timer), timer = null); });
+
+  /* Tamaño, fondo, movimiento reducido */
+  function seg(id, fn) {
+    var box = document.getElementById(id);
+    box.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      Array.prototype.forEach.call(box.children, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      fn(b.dataset.v);
+    });
+  }
+  seg("sizes", function (v) { document.getElementById("rig").style.setProperty("--size", v + "px"); });
+  seg("bgs", function (v) { stage.dataset.bg = v; });
+  document.getElementById("calm").addEventListener("change", function (e) { stage.classList.toggle("calm", e.target.checked); });
+
+  /* Tarjetas de estados */
+  var cards = document.getElementById("cards");
+  ORDER.forEach(function (s) {
+    var card = el("article", "card");
+    var head = el("header");
+    head.appendChild(el("h3", null, cap(s)));
+    head.appendChild(el("span", "mono", "bee-" + s + ".svg"));
+    card.appendChild(head);
+    ["l", "d"].forEach(function (k) {
+      var half = el("div", "half " + k);
+      [128, 96, 64].forEach(function (px) {
+        var img = new Image(px, px);
+        img.src = URIS[s]; img.alt = k === "l" && px === 128 ? "Miel, " + STATES[s].label : ""; img.decoding = "async";
+        half.appendChild(img);
+      });
+      card.appendChild(half);
+    });
+    cards.appendChild(card);
+  });
+
+  /* Paleta */
+  var sw = document.getElementById("swatches");
+  PALETTE.forEach(function (c) {
+    var b = el("button", "sw"); b.type = "button"; b.setAttribute("aria-label", "Copiar " + c.hex);
+    var col = el("div", "col"); col.style.background = c.hex;
+    var meta = el("div", "meta");
+    meta.appendChild(el("b", null, c.name));
+    var hex = el("span", "mono", c.hex); meta.appendChild(hex);
+    meta.appendChild(el("small", null, c.role));
+    b.appendChild(col); b.appendChild(meta);
+    b.addEventListener("click", function () {
+      function done() { hex.textContent = "Copiado"; hex.classList.add("copied"); setTimeout(function () { hex.textContent = c.hex; hex.classList.remove("copied"); }, 1200); }
+      function fallback() {
+        try { var r = document.createRange(); r.selectNodeContents(hex); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
+      }
+      try { navigator.clipboard.writeText(c.hex).then(done, fallback); } catch (e) { fallback(); }
+    });
+    sw.appendChild(b);
+  });
+
+  setState("idle");
+  startCycle();
+})();
+</script>

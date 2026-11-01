@@ -1,0 +1,69 @@
+/* Burbuja de Miel: crema + tinta + halo claro (misma paleta y "sticker" que la abeja). */
+.bubble-slot {
+  position: absolute;
+  left: 50%;
+  /* justo encima del sprite: 100% - ancla + medio sprite + holgura para la punta */
+  bottom: calc(100% - var(--bee-anchor-y) + var(--bee-size) / 2 + 6px);
+  transform: translateX(-50%);
+  width: 220px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.bubble {
+  position: relative;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 7px 12px 8px;
+  background: #fff1cc; /* cream */
+  color: #3b2a21; /* ink */
+  border: 2px solid #3b2a21;
+  border-radius: 16px;
+  font: 600 13px/1.3 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  /* halo claro (rim) para legibilidad sobre fondos oscuros; incluye la punta */
+  filter: drop-shadow(1.5px 0 0 #fff7e0) drop-shadow(-1.5px 0 0 #fff7e0)
+    drop-shadow(0 1.5px 0 #fff7e0) drop-shadow(0 -1.5px 0 #fff7e0);
+  animation: bubble-in 0.18s ease-out both;
+}
+
+/* punta orientada hacia la abeja */
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 10px;
+  height: 10px;
+  background: #fff1cc;
+  border-right: 2px solid #3b2a21;
+  border-bottom: 2px solid #3b2a21;
+  border-bottom-right-radius: 3px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.bubble[data-state="leaving"] {
+  animation: bubble-out 0.16s ease-in both;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes bubble-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(3px) scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  .bubble[data-state="leaving"] {
+    animation: none !important;
+  }
+}

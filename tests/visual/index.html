@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Miel — rejilla visual</title>
+<style>body{margin:0;display:grid;grid-template-columns:repeat(2,1fr)}iframe{border:0;width:100%;height:190px}</style></head>
+<body>
+<script>
+ const states=["idle","happy","curious","thinking","sleepy","surprised","talking","resting"];
+ const theme=new URLSearchParams(location.search).get("theme")||"light";
+ // una columna por tema; 2 columnas = 8 estados en 4 filas
+ for(const s of states){document.body.insertAdjacentHTML("beforeend",`<iframe src="./cell.html?state=${s}&theme=${theme}"></iframe>`)}
+</script></body></html>

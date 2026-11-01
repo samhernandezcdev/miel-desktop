@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Miel — rejilla de burbujas</title>
+<style>body{margin:0;display:grid;grid-template-columns:repeat(4,285px);gap:0}iframe{border:0;width:285px;height:245px}</style></head>
+<body><script>
+ const theme=new URLSearchParams(location.search).get("theme")||"light";
+ const cases=[
+  ["idle",64,"Aquí sigo."],["idle",96,"Aquí sigo."],["idle",128,"Aquí sigo."],
+  ["happy",96,"¿Ya viste qué bonitas son mis alas?"],
+  ["sleepy",96,"Mis alitas necesitan descansar."],["thinking",96,"Mmm… estaba pensando en flores."],
+  ["surprised",96,"¡Uy, me distraje!"],["curious",96,"¿Qué estaremos haciendo hoy?"],
+  ["talking",96,"¡Bzz, bzz!"],["resting",96,""],
+  ["happy",96,"Hoy tengo mucha energía y muchas ganas de volar por todo el escritorio."],
+  ["happy",128,"¡Qué bonito día!"]];
+ for(const [s,n,t] of cases){const u=`./bubble.html?state=${s}&size=${n}&theme=${theme}`+(t?`&text=${encodeURIComponent(t)}`:"");document.body.insertAdjacentHTML("beforeend",`<iframe src="${u}"></iframe>`)}
+</script></body></html>

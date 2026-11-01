@@ -1,0 +1,24 @@
+# PROPUESTA INACTIVA: Dependabot NO está activado en v0.1.0.
+# GitHub solo lee `.github/dependabot.yml`; este archivo no hace nada donde está.
+# No lo actives hasta cerrar la estrategia de docs/DEPENDENCY_UPDATES.md: cada PR que cambie Cargo.lock o
+# package-lock.json hace fallar el job `licenses` hasta que una persona regenere THIRD_PARTY_LICENSES.txt.
+# Recuerda también que 'Dependabot security updates' (Settings > Code security) abre PR por su cuenta, sin este archivo.
+
+# Mantiene al día las acciones (fijadas por SHA), npm y Cargo. Solo abre pull requests: no fusiona nada.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

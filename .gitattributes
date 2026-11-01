@@ -1,0 +1,6 @@
+# Normaliza el texto y conserva los binarios y los SVG originales tal cual.
+* text=auto
+*.svg -text
+*.png binary
+*.ico binary
+*.exe binary

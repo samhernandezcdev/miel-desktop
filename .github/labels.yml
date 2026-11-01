@@ -1,0 +1,56 @@
+# Inventario de etiquetas iniciales. Es solo una lista: no crea nada en GitHub automáticamente.
+# Créalas a mano (Issues > Labels) o con `gh label create` (ver docs/PUBLISHING_CHECKLIST.md).
+- name: bug
+  color: d73a4a
+  description: Algo no funciona / Something is broken
+- name: enhancement
+  color: a2eeef
+  description: Mejora o funcionalidad nueva / New feature or improvement
+- name: documentation
+  color: 0075ca
+  description: Documentación / Documentation
+- name: good first issue
+  color: 7057ff
+  description: Bueno para empezar / Good for newcomers
+- name: help wanted
+  color: 008672
+  description: Se agradece ayuda / Extra attention is needed
+- name: roadmap
+  color: fbca04
+  description: Relacionado con ROADMAP.md / Related to ROADMAP.md
+- name: privacy
+  color: b60205
+  description: Afecta a privacidad o a los datos que toca Miel / Affects privacy or data Miel touches
+- name: security
+  color: ee0701
+  description: Seguridad (no publiques detalles de vulnerabilidades) / Security (do not post vulnerability details)
+- name: performance
+  color: c5def5
+  description: CPU, memoria o energía / CPU, memory or energy
+- name: character
+  color: f9d0c4
+  description: Expresiones, SVG y personalidad de Miel / Expressions, SVG and Miel's personality
+- name: messages
+  color: fef2c0
+  description: Frases del catálogo / Catalog phrases
+- name: translation
+  color: bfdadc
+  description: Traducciones / Translations
+- name: windows
+  color: 1d76db
+  description: Específico de Windows (monitores, DPI, bandeja, instalador) / Windows-specific
+- name: installer
+  color: 5319e7
+  description: Instalador NSIS y publicación / NSIS installer and releases
+- name: blocked
+  color: e4e669
+  description: Espera otra decisión o issue / Waiting on something else
+- name: wontfix
+  color: ffffff
+  description: No se hará (principios del proyecto) / Will not be worked on
+- name: duplicate
+  color: cfd3d7
+  description: Ya existe / Already exists
+- name: question
+  color: d876e3
+  description: Pregunta / Further information requested

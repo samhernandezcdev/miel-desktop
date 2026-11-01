@@ -1,0 +1,62 @@
+/* Miel — animaciones base y tabla de estados (generado por tools/build_bee.py) */
+.bee{overflow:visible;--dx:0px;--dy:0px;--rot:0deg;--sx:1;--sy:1;--wing-base:0deg;--wing-amp:7deg;--wing-dur:.34s;--ant-l:0deg;--ant-r:0deg;--float-amp:3px;--float-dur:3.8s}
+
+/* Capas de movimiento: float → sway → pose (cada una anima una sola propiedad) */
+.bee .float{animation:bee-float var(--float-dur) ease-in-out infinite}
+.bee .sway{transform-origin:64px 74px;animation:bee-sway 5.4s ease-in-out infinite}
+.bee .pose{transform-origin:64px 74px;transform:translate(var(--dx),var(--dy)) rotate(var(--rot)) scale(var(--sx),var(--sy));transition:transform .7s cubic-bezier(.34,.9,.3,1)}
+
+/* Alas */
+.bee .wing-l{transform-origin:54px 52px;transform:rotate(var(--wing-base));transition:transform .7s ease}
+.bee .wing-r{transform-origin:74px 52px;transform:rotate(calc(var(--wing-base) * -1));transition:transform .7s ease}
+.bee .wing-l .flap{transform-origin:54px 52px;animation:bee-flap-l var(--wing-dur) ease-in-out infinite alternate}
+.bee .wing-r .flap{transform-origin:74px 52px;animation:bee-flap-r var(--wing-dur) ease-in-out infinite alternate}
+
+/* Antenas */
+.bee .antenna-l{transform-origin:52px 40px;transform:rotate(var(--ant-l));transition:transform .7s ease}
+.bee .antenna-r{transform-origin:75px 40px;transform:rotate(var(--ant-r));transition:transform .7s ease}
+.bee .antenna-l .wiggle{transform-origin:52px 40px;animation:bee-wig 4.6s ease-in-out infinite alternate}
+.bee .antenna-r .wiggle{transform-origin:75px 40px;animation:bee-wig 5.3s ease-in-out -1.7s infinite alternate-reverse}
+
+/* Rostro: un grupo por estado, fundido cruzado */
+.bee .face{opacity:0;transition:opacity .3s ease}
+.bee[data-state="idle"] .face-idle,
+.bee[data-state="happy"] .face-happy,
+.bee[data-state="curious"] .face-curious,
+.bee[data-state="thinking"] .face-thinking,
+.bee[data-state="sleepy"] .face-sleepy,
+.bee[data-state="surprised"] .face-surprised,
+.bee[data-state="talking"] .face-talking,
+.bee[data-state="resting"] .face-resting{opacity:1}
+.bee .eyes{transform-origin:64px 58px;animation:bee-blink 6s ease-in-out infinite}
+.bee .eyes.no-blink{animation:none}
+.bee[data-state="talking"] .mouth-a{animation:bee-talk-a 1.1s step-end infinite}
+.bee[data-state="talking"] .mouth-b{animation:bee-talk-b 1.1s step-end infinite}
+.bee .zzz .z-1{animation:bee-zz 3.2s ease-in-out infinite}
+.bee .zzz .z-2{animation:bee-zz 3.2s ease-in-out .9s infinite}
+
+@keyframes bee-float{0%,100%{transform:translateY(0)}50%{transform:translateY(calc(var(--float-amp) * -1))}}
+@keyframes bee-sway{0%,100%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}}
+@keyframes bee-flap-l{from{transform:rotate(calc(var(--wing-amp) * -1))}to{transform:rotate(var(--wing-amp))}}
+@keyframes bee-flap-r{from{transform:rotate(var(--wing-amp))}to{transform:rotate(calc(var(--wing-amp) * -1))}}
+@keyframes bee-wig{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}
+@keyframes bee-blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.08)}}
+@keyframes bee-talk-a{0%{opacity:1}22%{opacity:0}38%{opacity:1}60%{opacity:0}72%{opacity:1}88%{opacity:0}100%{opacity:1}}
+@keyframes bee-talk-b{0%{opacity:0}22%{opacity:1}38%{opacity:0}60%{opacity:1}72%{opacity:0}88%{opacity:1}100%{opacity:0}}
+@keyframes bee-zz{0%,100%{opacity:.45;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
+
+/* Tabla de estados (variables CSS) */
+.bee[data-state="idle"]{--dx:1px;--dy:0px;--rot:-3deg;--sx:1;--sy:1;--wing-base:0deg;--wing-amp:7deg;--wing-dur:0.34s;--ant-l:0deg;--ant-r:0deg;--float-amp:3px;--float-dur:3.8s}
+.bee[data-state="happy"]{--dx:2px;--dy:-2px;--rot:-5deg;--sx:1;--sy:1;--wing-base:6deg;--wing-amp:9deg;--wing-dur:0.28s;--ant-l:-6deg;--ant-r:6deg;--float-amp:4px;--float-dur:3.2s}
+.bee[data-state="curious"]{--dx:-1px;--dy:0px;--rot:6deg;--sx:1;--sy:1;--wing-base:0deg;--wing-amp:6deg;--wing-dur:0.36s;--ant-l:12deg;--ant-r:10deg;--float-amp:2.5px;--float-dur:3.8s}
+.bee[data-state="thinking"]{--dx:-1px;--dy:1px;--rot:-5deg;--sx:1;--sy:1;--wing-base:-6deg;--wing-amp:5deg;--wing-dur:0.42s;--ant-l:0deg;--ant-r:-14deg;--float-amp:2.5px;--float-dur:4.2s}
+.bee[data-state="sleepy"]{--dx:-1px;--dy:4px;--rot:5deg;--sx:1;--sy:0.98;--wing-base:-16deg;--wing-amp:2.5deg;--wing-dur:0.7s;--ant-l:-24deg;--ant-r:24deg;--float-amp:1.5px;--float-dur:5.5s}
+.bee[data-state="surprised"]{--dx:0px;--dy:-3px;--rot:0deg;--sx:1.03;--sy:1.03;--wing-base:14deg;--wing-amp:12deg;--wing-dur:0.22s;--ant-l:10deg;--ant-r:-10deg;--float-amp:1px;--float-dur:3s}
+.bee[data-state="talking"]{--dx:1px;--dy:0px;--rot:-2deg;--sx:1;--sy:1;--wing-base:2deg;--wing-amp:6deg;--wing-dur:0.32s;--ant-l:0deg;--ant-r:0deg;--float-amp:2.5px;--float-dur:3.6s}
+.bee[data-state="resting"]{--dx:0px;--dy:4px;--rot:0deg;--sx:1.05;--sy:0.93;--wing-base:-62deg;--wing-amp:0deg;--wing-dur:1s;--ant-l:-34deg;--ant-r:34deg;--float-amp:0px;--float-dur:4s}
+
+/* Movimiento reducido: sin animaciones ni transiciones, pose estática */
+@media (prefers-reduced-motion:reduce){
+  .bee,.bee *{animation:none!important;transition:none!important}
+  .bee[data-state="talking"] .mouth-b{opacity:0}
+}

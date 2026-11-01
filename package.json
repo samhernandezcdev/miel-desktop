@@ -1,0 +1,35 @@
+{
+  "name": "miel-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node tools/check_dist.mjs",
+    "check:dist": "node tools/check_dist.mjs",
+    "typecheck": "tsc --noEmit",
+    "licenses": "python -I tools/gen_third_party_licenses.py",
+    "licenses:check": "python -I tools/gen_third_party_licenses.py --check",
+    "test": "vitest run",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^30.1.3",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.5",
+    "vite-plugin-svgr": "^5.2.0",
+    "vitest": "^5.0.5"
+  }
+}

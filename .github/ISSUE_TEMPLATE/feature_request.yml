@@ -1,0 +1,30 @@
+name: Proponer una mejora / Feature request
+description: Una idea para Miel (revisa antes ROADMAP.md) / An idea for Miel (check ROADMAP.md first)
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Miel es local, discreta y no recopila datos. Las propuestas deben respetar los **principios** de `ROADMAP.md`.
+        Miel is local, discreet and collects no data. Proposals must respect the **principles** in `ROADMAP.md`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: ¿Qué quieres lograr? / What are you trying to achieve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propuesta / Proposal
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacidad y rendimiento / Privacy and performance
+      description: ¿Lee algo del equipo? ¿Necesita red? ¿Cuesta CPU en reposo? / Does it read anything from the machine? Need network? Cost idle CPU?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas / Alternatives considered

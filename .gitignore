@@ -1,0 +1,38 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+*.log
+src-tauri/target-diag
+!docs/measurements/*.log
+
+# Python / herramientas
+__pycache__/
+*.pyc
+
+# Instaladores y artefactos de release (se adjuntan a la release, no se versionan)
+*.exe
+*.msi
+SHA256SUMS.txt
+/measure/
+
+# Datos locales que nunca deben publicarse
+EBWebView/
+settings.json
+settings.corrupt-*.json
+frontend-errors.log
+.env
+.env.*
+*.pem
+*.pfx
+*.p12
+*.key
+.claude/settings.local.json
+.claude/projects/
+
+# Archivos de editor / sistema
+.vscode/*
+!.vscode/extensions.json
+.idea/
+Thumbs.db
+desktop.ini

@@ -1,0 +1,49 @@
+/* Ventana transparente: ningún contenedor puede tener fondo. */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+}
+
+.stage {
+  --bee-size: 96px;
+  --bee-anchor-y: 128px; /* se recalcula en linea segun el tamano (layout.ts / window.rs) */
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* El sprite se centra en el ancla (centro del sprite) y no ocupa más que su caja. */
+.stage .sprite {
+  position: absolute;
+  left: 50%;
+  top: var(--bee-anchor-y);
+  width: var(--bee-size);
+  height: var(--bee-size);
+  transform: translate(-50%, -50%);
+}
+
+/* Pausada u oculta: congela todas las animaciones (sin trabajo de composición). */
+.stage[data-paused] .bee,
+.stage[data-paused] .bee * {
+  animation-play-state: paused !important;
+}
+
+.stage .sprite > svg {
+  display: block;
+}
+
+/* Movimiento reducido forzado por preferencia (equivale a la media query de bee.css y de la burbuja). */
+.stage[data-reduced-motion] .bee,
+.stage[data-reduced-motion] .bee *,
+.stage[data-reduced-motion] .bubble {
+  animation: none !important;
+  transition: none !important;
+}

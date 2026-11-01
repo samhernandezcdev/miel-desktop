@@ -1,0 +1,52 @@
+name: Reportar un error / Bug report
+description: Algo no funciona como debería / Something is not working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por avisar. **No pegues datos personales** (rutas con tu nombre de usuario, capturas de tu escritorio con contenido privado).
+        Thanks for reporting. **Do not paste personal data** (paths with your user name, desktop screenshots with private content).
+  - type: textarea
+    id: what
+    attributes:
+      label: ¿Qué pasó? / What happened?
+      description: Describe el problema y lo que esperabas. / Describe the problem and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducirlo / Steps to reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Miel / Miel version
+      placeholder: "0.1.0 (instalador / installer, o compilado desde el código / built from source)"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Versión de Windows / Windows version
+      placeholder: "Windows 11 24H2 (build 26100)"
+    validations:
+      required: true
+  - type: input
+    id: webview2
+    attributes:
+      label: Versión de WebView2 (opcional) / WebView2 version (optional)
+  - type: textarea
+    id: setup
+    attributes:
+      label: Monitores y escalado / Monitors and scaling
+      description: Cantidad de monitores, escalado (DPI) y si el problema ocurre solo con varios. / Monitor count, DPI scaling, and whether it only happens with several.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Registros / Logs
+      description: Si existe, el contenido de `frontend-errors.log` (en `%APPDATA%\lat.bkode.miel`). Revísalo antes de pegarlo. / If present, the content of `frontend-errors.log`. Review it before pasting.
+      render: text

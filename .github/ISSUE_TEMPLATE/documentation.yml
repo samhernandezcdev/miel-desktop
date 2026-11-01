@@ -1,0 +1,16 @@
+name: Documentación / Documentation
+description: Algo falta, está mal o confuso en la documentación / Something missing, wrong or unclear in the docs
+labels: [documentation]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Archivo o sección / File or section
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: ¿Qué debería decir? / What should it say?
+    validations:
+      required: true

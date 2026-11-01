@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permisos mínimos del frontend: suscribirse a eventos, consultar el estado y las preferencias de presentación, e informar errores de renderizado.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view",
+    "allow-get-display-prefs",
+    "allow-report-frontend-error"
+  ]
+}
