@@ -11,7 +11,9 @@ Miel es una abeja de escritorio para Windows 11 (Tauri 2, Rust, React y TypeScri
 Valen para todas las etapas. Una contribución que los rompa no se acepta, aunque funcione.
 
 1. **Local primero.** Todo funciona sin Internet. Lo que necesite red (etapa 3) es opcional y viene apagado.
-2. **Cada capacidad se activa por separado.** Lo que lee algo del equipo (inactividad, app activa) viene apagado y se explica antes de encenderlo.
+2. **Cada capacidad se activa y se apaga por separado.** Hay dos clases:
+   - **Señales básicas del sistema** (tiempo de inactividad como un simple contador, estado de pantalla completa/presentación, bloqueo y suspensión de la sesión, posición del cursor): no revelan qué haces ni qué apps usas, se guardan sin historial y **pueden venir activadas por defecto** (decisión para v0.2.0). Cada una tiene su interruptor en ajustes, que explica qué señal consulta.
+   - **Capacidades contextuales sensibles** (cualquier cosa que consulte aplicaciones, títulos de ventanas o carpetas): **siempre opt-in**, vienen apagadas y se explican antes de encenderlas.
 3. **Lo que Miel nunca hará:** leer lo que escribes, leer el contenido de tus archivos, tomar capturas de pantalla, enviar datos sin que lo hayas activado y puedas ver qué sale, o recopilar telemetría.
 4. **Discreta.** Poca CPU en reposo, movimiento suave, respeto a `prefers-reduced-motion`, y siempre se puede pausar u ocultar desde la bandeja.
 5. **Sin manipulación.** Miel no culpa ni insiste, no usa rachas ni avisos para retenerte, y si la cierras, se cierra.
@@ -52,6 +54,8 @@ Orden sugerido: A0 y A1 primero, porque todo lo demás necesita poder apagarse y
 - [ ] Ventana de ajustes que se crea al abrirla y se destruye al cerrarla, para no subir el consumo base de memoria.
 - [ ] Un interruptor por cada capacidad nueva de este hito y de las siguientes.
 - [ ] Tamaño de la abeja, intervalo de mensajes, movimiento reducido y seguimiento.
+
+> **Plan técnico de v0.2.0 (A0, A1, A3, A4):** [`docs/plan/v0.2.0.md`](docs/plan/v0.2.0.md). En v0.2.0, A1, A3 y A4 son señales básicas y vienen **activadas por defecto**, cada una con su interruptor; A4 se mide con la build de producción antes de publicar.
 
 ### A1. No molestar automático
 - [ ] Ocultarse o quedarse quieta con apps a pantalla completa, juegos exclusivos y modo presentación, apoyándose en `SHQueryUserNotificationState`, que informa de ese estado sin saber qué app es. Resolvería, en parte, la limitación actual de que Miel aparece encima de todo.

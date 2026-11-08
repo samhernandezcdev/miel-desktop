@@ -16,6 +16,18 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); e
 - `publish = false` en `src-tauri/Cargo.toml`.
 - Se retiraron de `docs/img/` cuatro capturas que mostraban contenido del escritorio del equipo de desarrollo.
 
+## [0.2.0] - PLANIFICADA / PLANNED (no publicada; nada de esto está implementado)
+
+> Esta sección describe lo **planificado** en [`docs/plan/v0.2.0.md`](docs/plan/v0.2.0.md); se actualizará al implementarse cada entrega.
+
+### Planificado / Planned
+- **Ajustes bajo demanda:** ventana propia que existe solo mientras está abierta; interruptores para las capacidades automáticas.
+- **No molestar automático (activado por defecto):** Miel se **oculta** y cancela sus mensajes mientras Windows indica pantalla completa de una app, juego Direct3D exclusivo o modo presentación, y vuelve sola al terminar. Es una heurística de Windows: puede ocultarla sin necesidad (p. ej. vídeo a pantalla completa) o no detectar juegos sin bordes. La bandeja lo indica y permite "Mostrar de todos modos" (solo para ese episodio) o apagar la función. Si ocultaste a Miel tú mismo, no reaparece al terminar la pantalla completa.
+- **Dormir por inactividad (activado por defecto, 10 min):** tras un rato sin usar el equipo Miel se queda dormida (sigue visible, sin mensajes) y despierta al volver. Solo usa un contador de inactividad del sistema; no registra teclas ni clics ni guarda historial.
+- **Reacción al cursor (activada por defecto):** Miel reacciona si acercas el cursor cuando está tranquila, respetando los tiempos de espera existentes. Se medirá su costo antes de publicar.
+- **Actualizar desde v0.1.0 activa estos comportamientos** porque son los valores por defecto; cada uno se apaga desde ajustes.
+- **Compatibilidad:** `settings.json` pasa a `schema_version` 2. Volver a v0.1.0 conserva lo común, **pierde** la configuración nueva (v0.1.0 la reescribe como versión 1) y al regresar los interruptores vuelven a sus valores por defecto.
+
 ## [0.1.0] - FECHA POR DEFINIR (al crear la release) / DATE TBD
 
 Primera versión pública (MVP).

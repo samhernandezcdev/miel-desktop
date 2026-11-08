@@ -1,0 +1,128 @@
+[miel] inicio: paused=false hidden=false follow=true pet_size=96 preferencias=Loaded { invalid: [], clamped: [] }
+[miel] t=1793668619225 relectura de monitores
+[miel] get_view -> v0
+[miel] diag: FollowEnabled(false) a los 1 s
+[miel] t=1793668620298 vista v1 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668624235 vista v3 Reaction/Thinking paused=false hidden=false follow=false msg=Some("thought.flowers")
+[miel] t=1793668628551 vista v4 Reaction/Thinking paused=false hidden=false follow=false msg=None
+[miel] t=1793668629246 vista v5 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668629261 vista v6 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668629263 relectura de monitores
+[miel] t=1793668631268 vista v7 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668631270 relectura de monitores
+[miel] t=1793668637271 vista v8 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668640596 vista v10 Rest/Sleepy paused=false hidden=false follow=false msg=Some("rest.sleepy")
+[miel] t=1793668640608 relectura de monitores
+[miel] t=1793668645958 vista v12 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668645968 relectura de monitores
+[miel] t=1793668648611 vista v13 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668652212 vista v14 Reaction/Happy paused=false hidden=false follow=false msg=None
+[miel] t=1793668657211 vista v15 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668657213 vista v16 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668657214 relectura de monitores
+[miel] t=1793668659218 vista v17 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668659220 relectura de monitores
+[miel] t=1793668665221 vista v19 Idle/Happy paused=false hidden=false follow=false msg=Some("mood.nice")
+[miel] t=1793668668933 vista v20 Reaction/Happy paused=false hidden=false follow=false msg=Some("mood.nice")
+[miel] t=1793668669393 vista v21 Reaction/Curious paused=false hidden=false follow=false msg=None
+[miel] t=1793668673943 vista v22 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668673953 vista v23 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668673955 relectura de monitores
+[miel] t=1793668675959 vista v24 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668675962 relectura de monitores
+[miel] t=1793668681959 vista v26 Idle/Idle paused=false hidden=false follow=false msg=Some("calm.quiet")
+[miel] t=1793668686833 vista v28 Reaction/Happy paused=false hidden=false follow=false msg=None
+[miel] t=1793668691834 vista v29 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668691845 vista v30 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668691847 relectura de monitores
+[miel] t=1793668693857 vista v31 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668693875 relectura de monitores
+[miel] t=1793668699847 vista v33 Idle/Happy paused=false hidden=false follow=false msg=Some("vanity.wings")
+[miel] t=1793668703656 vista v35 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668703666 relectura de monitores
+[miel] t=1793668705665 vista v36 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668705676 relectura de monitores
+[miel] t=1793668711656 vista v37 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668715613 vista v38 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668715623 relectura de monitores
+[miel] t=1793668717618 vista v39 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668717629 relectura de monitores
+[miel] t=1793668723622 vista v41 Idle/Idle paused=false hidden=false follow=false msg=Some("presence.here")
+[miel] t=1793668727469 vista v43 Reaction/Thinking paused=false hidden=false follow=false msg=None
+[miel] t=1793668732474 vista v44 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668732485 vista v45 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668732487 relectura de monitores
+[miel] t=1793668734496 vista v46 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668734507 relectura de monitores
+[miel] diag: Pause(true) a los 120 s
+[miel] t=1793668739275 vista v47 Rest/Resting paused=true hidden=false follow=false msg=None
+[miel] diag: Pause(false) a los 180 s
+[miel] t=1793668799284 vista v48 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668799290 relectura de monitores
+[miel] t=1793668800500 vista v50 Idle/Curious paused=false hidden=false follow=false msg=Some("curious.today")
+[miel] t=1793668803901 vista v52 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668803912 relectura de monitores
+[miel] t=1793668805905 vista v53 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668805916 relectura de monitores
+[miel] t=1793668811902 vista v54 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668816654 vista v55 Reaction/Happy paused=false hidden=false follow=false msg=None
+[miel] t=1793668821667 vista v57 Idle/Idle paused=false hidden=false follow=false msg=Some("presence.stay")
+[miel] t=1793668821679 vista v59 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668821681 relectura de monitores
+[miel] t=1793668823683 vista v60 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668823685 relectura de monitores
+[miel] t=1793668829686 vista v61 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668834519 vista v62 Reaction/Curious paused=false hidden=false follow=false msg=None
+[miel] t=1793668839532 vista v64 Idle/Talking paused=false hidden=false follow=false msg=Some("playful.buzz")
+[miel] t=1793668839542 vista v66 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668839544 relectura de monitores
+[miel] t=1793668841553 vista v67 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668841564 relectura de monitores
+[miel] t=1793668847546 vista v68 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668851082 vista v69 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668851092 relectura de monitores
+[miel] t=1793668853092 vista v70 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668853103 relectura de monitores
+[miel] t=1793668859095 vista v72 Idle/Happy paused=false hidden=false follow=false msg=Some("energy.lots")
+[miel] diag: Hidden(true) a los 240 s
+[miel] t=1793668859276 vista v74 Idle/Idle paused=false hidden=true follow=false msg=None
+[miel] diag: Hidden(false) a los 300 s
+[miel] t=1793668919284 relectura de monitores
+[miel] t=1793668919286 vista v75 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668922340 vista v76 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668922350 relectura de monitores
+[miel] t=1793668924349 vista v77 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668924351 relectura de monitores
+[miel] t=1793668930351 vista v78 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668933565 vista v79 Reaction/Surprised paused=false hidden=false follow=false msg=None
+[miel] t=1793668938570 vista v80 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668938581 vista v82 Rest/Sleepy paused=false hidden=false follow=false msg=Some("rest.wings")
+[miel] t=1793668938583 relectura de monitores
+[miel] t=1793668940585 relectura de monitores
+[miel] t=1793668943479 vista v84 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668943481 relectura de monitores
+[miel] t=1793668946595 vista v85 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668950802 vista v86 Reaction/Happy paused=false hidden=false follow=false msg=None
+[miel] t=1793668955815 vista v87 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668955826 vista v89 Rest/Sleepy paused=false hidden=false follow=false msg=Some("rest.little")
+[miel] t=1793668955828 relectura de monitores
+[miel] t=1793668957840 relectura de monitores
+[miel] t=1793668961414 vista v91 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668961424 relectura de monitores
+[miel] t=1793668963840 vista v92 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668968069 vista v93 Rest/Sleepy paused=false hidden=false follow=false msg=None
+[miel] t=1793668968071 relectura de monitores
+[miel] t=1793668970079 vista v94 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668970089 relectura de monitores
+[miel] t=1793668976070 vista v95 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668979275 vista v96 Reaction/Thinking paused=false hidden=false follow=false msg=None
+[miel] t=1793668984278 vista v97 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668984280 vista v99 Rest/Sleepy paused=false hidden=false follow=false msg=Some("rest.break")
+[miel] t=1793668984282 relectura de monitores
+[miel] t=1793668989403 vista v101 Rest/Resting paused=false hidden=false follow=false msg=None
+[miel] t=1793668989414 relectura de monitores
+[miel] t=1793668992281 vista v102 Idle/Idle paused=false hidden=false follow=false msg=None
+[miel] t=1793668997267 vista v103 Reaction/Curious paused=false hidden=false follow=false msg=None
+[miel] cierre: subclase retirada ahora=true
+[miel] cierre: subclase retirada ahora=false
+[miel] cierre: motor detenido y unido=true
