@@ -26,6 +26,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); e
 - **Dormir por inactividad (activado por defecto, 10 min):** tras un rato sin usar el equipo Miel se queda dormida (sigue visible, sin mensajes) y despierta al volver. Solo usa un contador de inactividad del sistema; no registra teclas ni clics ni guarda historial.
 - **Reacción al cursor (activada por defecto):** Miel reacciona si acercas el cursor cuando está tranquila, respetando los tiempos de espera existentes. Se medirá su costo antes de publicar.
 - **Actualizar desde v0.1.0 activa estos comportamientos** porque son los valores por defecto; cada uno se apaga desde ajustes.
+- **Privacidad verificable (E0, implementado en el repositorio; CI remota pendiente de ver en verde):** nuevo [`docs/PRIVACY.md`](docs/PRIVACY.md) y `tools/check_privacy.py` (símbolos prohibidos, permisos exactos, API de `windows` permitida y línea base de dependencias con capacidad de red, con prueba negativa `--self-test`) como trabajo `privacy` de la CI. Es un control preventivo, no una demostración.
+- **DCO en los pull requests (E0):** trabajo `dco` de la CI con `tools/check_dco.py` (cada commit con `Signed-off-by`; sin acciones de terceros).
 - **Compatibilidad:** `settings.json` pasa a `schema_version` 2. Volver a v0.1.0 conserva lo común, **pierde** la configuración nueva (v0.1.0 la reescribe como versión 1) y al regresar los interruptores vuelven a sus valores por defecto.
 
 ## [0.1.0] - FECHA POR DEFINIR (al crear la release) / DATE TBD

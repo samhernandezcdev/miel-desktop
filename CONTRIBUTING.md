@@ -86,6 +86,16 @@ Tu contribución se publica bajo la licencia del componente que modificas:
 
 Si tu aporte incluye material generado con IA, indícalo en el PR. Detalles en [`docs/LICENSING.md`](docs/LICENSING.md).
 
+La CI comprueba el DCO en cada pull request (`tools/check_dco.py`, sin acciones de terceros): si falta la firma en algún commit, arréglalo con `git commit --amend -s` (o `git rebase --signoff` para varios) y vuelve a subir. Para probarlo en local: `python -I tools/check_dco.py --self-test`.
+
+### Comprobación de privacidad
+Miel no lee teclas, pantallas, títulos de ventana ni archivos, y no usa red. La CI ejecuta `tools/check_privacy.py`, que falla si aparece una API prohibida, un permiso nuevo en `capabilities/`, una API de `windows` no aprobada o una dependencia nueva con capacidad de red. Es un control **preventivo** (ver [`docs/PRIVACY.md`](docs/PRIVACY.md)). En local:
+```
+python -I tools/check_privacy.py              # completa (necesita cargo y `npm ci`)
+python -I tools/check_privacy.py --self-test  # prueba negativa: debe fallar ante entradas indebidas
+```
+Si tu cambio necesita legítimamente un permiso, una API o una dependencia nueva, explícalo en el PR: las listas (`tools/privacy_policy.json`, `tools/privacy_baseline.json`) solo se amplían tras revisión de privacidad.
+
 ---
 
 # English
@@ -158,3 +168,13 @@ Your contribution is published under the license of the component you modify:
 - Miel's **name and visual identity** (name, BKODE, logo and icons) are not licensed and are governed by the [trademark policy](TRADEMARK_POLICY.md).
 
 If your contribution includes AI-generated material, say so in the PR. Details in [`docs/LICENSING.md`](docs/LICENSING.md).
+
+CI checks the DCO on every pull request (`tools/check_dco.py`, no third-party actions): if a commit lacks the sign-off, fix it with `git commit --amend -s` (or `git rebase --signoff` for several) and push again. To try it locally: `python -I tools/check_dco.py --self-test`.
+
+### Privacy check
+Miel does not read keys, screens, window titles or files, and uses no network. CI runs `tools/check_privacy.py`, which fails on a forbidden API, a new permission in `capabilities/`, an unapproved `windows` API or a new network-capable dependency. It is a **preventive** control (see [`docs/PRIVACY.md`](docs/PRIVACY.md)). Locally:
+```
+python -I tools/check_privacy.py              # full (needs cargo and `npm ci`)
+python -I tools/check_privacy.py --self-test  # negative test: must fail on bad inputs
+```
+If your change legitimately needs a new permission, API or dependency, explain it in the PR: the lists (`tools/privacy_policy.json`, `tools/privacy_baseline.json`) are only extended after a privacy review.

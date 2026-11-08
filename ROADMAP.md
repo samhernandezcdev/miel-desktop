@@ -191,7 +191,6 @@ La idea es que cualquiera cree y comparta su propia mascota, con Miel como la pr
 
 ## Ideas abiertas (sin planificar)
 
-- Estado `dancing` con ritmo fijo, sin escuchar audio, para el baile del trend. Faltan los pasos concretos.
 - Conversar con Miel (requiere una caja de texto en una ventana bajo demanda).
 - Sonidos opcionales, apagados por defecto.
 - Soporte para otros sistemas. Hoy es solo Windows 11 por las APIs usadas; se mantiene la lógica pura en Rust para no cerrar esa puerta.

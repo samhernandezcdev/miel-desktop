@@ -1,7 +1,7 @@
 # Integración continua de Miel Desktop (solo Windows: el producto es solo Windows 11 x64).
 # Permisos mínimos: solo lectura del contenido. No publica nada ni usa secretos.
 # Las acciones están fijadas por SHA de commit (el comentario indica la versión); se actualizan a mano (docs/DEPENDENCY_UPDATES.md).
-# Checks OBLIGATORIOS de la rama main: `licenses`, `frontend` y `rust` (ver docs/PUBLISHING_CHECKLIST.md).
+# Checks OBLIGATORIOS de la rama main: `licenses`, `frontend` y `rust` (ver docs/PUBLISHING_CHECKLIST.md). `privacy` y `dco` (solo en PR) son nuevos: marcarlos como obligatorios tras verlos en verde.
 name: CI
 
 on:
@@ -81,3 +81,48 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: cargo clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+  # Control PREVENTIVO de privacidad (docs/PRIVACY.md): símbolos prohibidos, permisos exactos, API de `windows`
+  # permitida y línea base de dependencias con capacidad de red. No demuestra la ausencia de acceso a datos.
+  privacy:
+    name: privacy
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Rust estable (para cargo metadata/tree)
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Prueba negativa (el control DEBE fallar ante símbolos y permisos indebidos)
+        run: python -I tools/check_privacy.py --self-test
+      - name: Comprobación de privacidad sobre el código actual
+        run: python -I tools/check_privacy.py
+
+  # DCO (DCO.md): cada commit del pull request lleva `Signed-off-by`. Script propio, sin acciones de terceros.
+  dco:
+    name: dco
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Autotest del DCO (casos con y sin firma)
+        run: python -I tools/check_dco.py --self-test
+      - name: Todos los commits del PR llevan Signed-off-by
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python -I tools/check_dco.py --base "$env:BASE_SHA" --head "$env:HEAD_SHA"

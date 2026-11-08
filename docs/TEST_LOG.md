@@ -290,3 +290,37 @@ archivos del proyecto sin `node_modules`, `target`, `target-diag`, `dist`, `gen`
   **Pendiente** con el instalador anterior (instalación, actualización y desinstalación, click-through y foco con el instalador instalado,
   varios monitores, DPI, uso prolongado, burbuja de mensajes tras 5–6 min) **siguen pendientes y deben repetirse con este instalador nuevo**.
 - El `miel.exe` nuevo tiene el mismo tamaño que el anterior pero distinto hash; las compilaciones no son reproducibles bit a bit (rutas, metadatos).
+
+## v0.2.0 · E0: privacidad y DCO (2026-11-08)
+
+Alcance: `docs/PRIVACY.md`, `tools/check_privacy.py` (+ `tools/privacy_policy.json`, `tools/privacy_baseline.json`), `tools/check_dco.py` y los trabajos `privacy` y `dco` de `.github/workflows/ci.yml`. Sin cambios en código de la aplicación ni en SVG.
+
+| Comprobación | Resultado |
+|---|---|
+| `python -I tools/check_privacy.py` sobre el código actual | OK. **0 coincidencias** de símbolos prohibidos en `src-tauri/src/**` y `src/**`; capabilities y permisos de aplicación iguales a la lista aprobada; features de `windows` y `tauri` dentro de la lista; CSP sin hosts de red; las 23 API de `windows` usadas están en la lista permitida y de las 42 entradas de la lista, las 40 que no son de `core::` existen en `windows 0.62.2` (las 2 de `core::` no se comprueban); sin diferencias respecto a la línea base |
+| `python -I tools/check_privacy.py --self-test` | OK: falla ante cada símbolo prohibido inyectado (Rust y JS), permisos nuevos, archivo de capabilities nuevo, feature de red, CSP remota, API de `windows` no aprobada o inexistente, crate o paquete npm nuevo; pasa con comentarios y nombres que solo contienen el símbolo como parte de otra palabra |
+| Mutaciones del autotest (regex roto, sin quitar comentarios, línea base ciega, capabilities ciegas) | El autotest FALLA en las cuatro: el propio control está probado |
+| `python -I tools/check_dco.py --self-test` | OK: 11 casos con y sin firma + historial simulado |
+| `check_dco.py` sobre historial real (`6964b11..HEAD`) | Falla como se espera: `6964b11` y `9df4154` no llevan `Signed-off-by` (el control solo se aplica a pull requests nuevos) |
+| `cargo test --locked`, `clippy`, `vitest`, `tsc`, `check:dist` | Ver el resumen de la entrega; sin cambios de código |
+| **CI remota** (`privacy`, `dco`, y que `python` de `windows-latest` admita `tomllib`) | **Pendiente**: no se ha ejecutado en GitHub Actions |
+
+### v0.2.0 · E0: conexiones de red de `miel.exe` en ejecución (2026-11-08) — solo lectura
+
+**Qué se hizo.** Build de producción compilada ese día (`cargo build --release --locked --features tauri/custom-protocol` sobre `dist/` recién generado; `src-tauri/target/release/miel.exe`, 3 355 648 B), lanzada con los ajustes reales de la persona (respaldados antes; comprobados **idénticos byte a byte** con SHA-256 después). Durante 240 s se muestreó cada 5 s (43 muestras) el **árbol de procesos de ese `miel.exe`** (por PPID: `miel.exe` + los `msedgewebview2.exe` que cuelgan de él; 8 procesos) con `Get-NetTCPConnection` y `Get-NetUDPEndpoint` filtrados por PID. No se movió ni generó ninguna entrada; no se tocó ningún otro proceso `msedgewebview2` del equipo (los de otras aplicaciones se excluyen por no ser descendientes). Al terminar se detuvo solo ese árbol: **0 procesos `miel` restantes** y el `settings.json` original restaurado. Datos: `docs/measurements/v020-e0-net-connections.csv` y `v020-e0-net-procs.csv` (PID, protocolo, direcciones, estado; sin contenido ni capturas).
+
+**Resultado (hechos).**
+- **`miel.exe` (PID del proceso principal): 0 conexiones TCP y 0 puntos UDP en las 43 muestras.**
+- Procesos `msedgewebview2.exe` hijos de Miel: sí hubo sockets TCP en el puerto 443 (IPv6) y un punto UDP local:
+  - PID 25792: 2 conexiones `Established` hacia `2603:1036:311:1002::2:443`, entre t = 15 s y 110 s.
+  - PID 29248: conexiones `Established` hacia `2620:1ec:33::11:443`, entre t = 63 s y 184 s, y un punto UDP local (`:::60711`).
+  - Después de t = 184 s no se vio ningún socket.
+- Las dos direcciones remotas pertenecen a **Microsoft Corporation (red `MSFT`, consulta RDAP de ARIN el mismo día)**. No se identificó el nombre del servidor (sin DNS inverso) ni la finalidad.
+
+**Interpretación y límites (no extrapolar).**
+- Es coherente con lo que `docs/PRIVACY.md` declara: el motor Rust de Miel no abre sockets y el tráfico observado lo originan los **procesos del runtime de WebView2** (componente de Microsoft con su propio comportamiento de red y de diagnóstico, fuera del control de Miel). Esta medición **no permite** distinguir si ese tráfico lo causa el runtime por sí mismo (actualización, diagnóstico, comprobaciones) o alguna acción de la página de Miel; el código de la interfaz no contiene `fetch`/`XMLHttpRequest`/`WebSocket` (comprobado por `tools/check_privacy.py`) y la CSP de producción solo permite `ipc:` y `http://ipc.localhost`, pero eso no explica por sí solo el tráfico del runtime.
+- Es un **muestreo de instantáneas** cada 5 s: no ve conexiones más breves que el intervalo, ni el contenido, ni los nombres consultados por DNS (no se usó ETW ni captura de paquetes: exigirían privilegios y no estaban autorizados). Cada fila es el estado en ese instante.
+- **Una sola ejecución de 4 minutos**, un equipo, una red (IPv6 activo), con la configuración real de la persona; no cubre arranque en frío del runtime, actualizaciones periódicas, otras redes ni sesiones largas. No se repitió con el runtime sin red ni con otra versión de WebView2.
+- Las conexiones del runtime no son una violación de la política (que prohíbe red **en el código de Miel**), pero sí significan que **"Miel no genera tráfico de red" no puede afirmarse para el proceso en su conjunto**: la documentación solo afirma que Miel no añade conexiones por su cuenta.
+- **Pendiente:** repetir tras instalar el instalador definitivo y con una sesión más larga si se quiere acotar el comportamiento del runtime.
+

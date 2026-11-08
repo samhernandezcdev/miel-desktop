@@ -1,0 +1,71 @@
+{
+  "_comment": "Listas PERMITIDAS exactas de la comprobación de privacidad (tools/check_privacy.py). Cambiarlas exige revisión de privacidad explícita (ver docs/PRIVACY.md). 'planned' = permitido por docs/plan/v0.2.0.md §10-11 pero aún no usado.",
+  "capabilities": {
+    "default.json": {
+      "windows": ["main"],
+      "permissions": [
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
+        "allow-get-view",
+        "allow-get-display-prefs",
+        "allow-report-frontend-error"
+      ]
+    }
+  },
+  "app_permission_files": ["get_view", "get_display_prefs", "report_frontend_error"],
+  "windows_features": [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_SystemInformation",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Power"
+  ],
+  "tauri_features": ["tray-icon", "test"],
+  "csp_allowed_hosts": ["http://ipc.localhost"],
+  "windows_api": [
+    "Win32::Foundation::HWND",
+    "Win32::Foundation::LPARAM",
+    "Win32::Foundation::LRESULT",
+    "Win32::Foundation::WPARAM",
+    "Win32::UI::Shell::DefSubclassProc",
+    "Win32::UI::Shell::RemoveWindowSubclass",
+    "Win32::UI::Shell::SetWindowSubclass",
+    "Win32::UI::WindowsAndMessaging::SPI_SETWORKAREA",
+    "Win32::UI::WindowsAndMessaging::WM_DISPLAYCHANGE",
+    "Win32::UI::WindowsAndMessaging::WM_DPICHANGED",
+    "Win32::UI::WindowsAndMessaging::WM_NCDESTROY",
+    "Win32::UI::WindowsAndMessaging::WM_SETTINGCHANGE",
+    "Win32::UI::WindowsAndMessaging::CreateWindowExW",
+    "Win32::UI::WindowsAndMessaging::DestroyWindow",
+    "Win32::UI::WindowsAndMessaging::SendMessageW",
+    "Win32::UI::WindowsAndMessaging::HWND_MESSAGE",
+    "Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE",
+    "Win32::UI::WindowsAndMessaging::WINDOW_STYLE",
+    "Win32::UI::WindowsAndMessaging::MessageBoxW",
+    "Win32::UI::WindowsAndMessaging::MB_ICONERROR",
+    "Win32::UI::WindowsAndMessaging::MB_OK",
+    "core::w",
+    "core::HSTRING",
+    "Win32::UI::Input::KeyboardAndMouse::GetLastInputInfo",
+    "Win32::UI::Input::KeyboardAndMouse::LASTINPUTINFO",
+    "Win32::System::SystemInformation::GetTickCount",
+    "Win32::System::SystemInformation::GetTickCount64",
+    "Win32::UI::Shell::SHQueryUserNotificationState",
+    "Win32::UI::Shell::QUERY_USER_NOTIFICATION_STATE",
+    "Win32::UI::Shell::QUNS_BUSY",
+    "Win32::UI::Shell::QUNS_RUNNING_D3D_FULL_SCREEN",
+    "Win32::UI::Shell::QUNS_PRESENTATION_MODE",
+    "Win32::System::RemoteDesktop::WTSRegisterSessionNotification",
+    "Win32::System::RemoteDesktop::WTSUnRegisterSessionNotification",
+    "Win32::System::RemoteDesktop::NOTIFY_FOR_THIS_SESSION",
+    "Win32::UI::WindowsAndMessaging::WM_WTSSESSION_CHANGE",
+    "Win32::UI::WindowsAndMessaging::WTS_SESSION_LOCK",
+    "Win32::UI::WindowsAndMessaging::WTS_SESSION_UNLOCK",
+    "Win32::UI::WindowsAndMessaging::WM_POWERBROADCAST",
+    "Win32::UI::WindowsAndMessaging::PBT_APMSUSPEND",
+    "Win32::UI::WindowsAndMessaging::PBT_APMRESUMEAUTOMATIC",
+    "Win32::UI::WindowsAndMessaging::PBT_APMRESUMESUSPEND"
+  ]
+}

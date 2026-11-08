@@ -1,0 +1,24 @@
+{
+  "cargo_network_capable": {
+    "http": "1.5.0",
+    "mio": "1.2.4",
+    "socket2": "0.6.5",
+    "tauri-plugin-single-instance": "2.5.5",
+    "tokio": "1.54.1",
+    "url": "2.5.8"
+  },
+  "npm_runtime": {
+    "@tauri-apps/api": "2.12.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "scheduler": "0.28.0"
+  },
+  "known_network_points": [
+    "tokio, mio, socket2: presentes de forma transitiva (runtime asíncrono de Tauri y canales locales). Su presencia no implica conexiones de Miel; no verificado exhaustivamente en ejecución.",
+    "http, url: tipos y utilidades de URL/HTTP usados por Tauri/WRY para su protocolo interno (ipc://, http://ipc.localhost).",
+    "tauri-plugin-single-instance: instancia única (mecanismo local).",
+    "WebView2 (runtime de Microsoft) no es una dependencia de cargo: se rige por su configuración y la de Windows. El instalador (NSISdl) puede descargar el bootstrapper desde go.microsoft.com si falta el runtime.",
+    "@tauri-apps/api (npm): cliente IPC de Tauri hacia Rust; la CSP de producción solo permite ipc: y http://ipc.localhost."
+  ],
+  "_comment": "Línea base de dependencias con capacidad de red y de paquetes npm de producción (tools/check_privacy.py). Se genera con `cargo tree --target x86_64-pc-windows-msvc -e normal,build` y `npm ls --omit=dev --all`. Falla ante una entrada NUEVA (solo nombres; las versiones son informativas). Revisa cada entrada nueva antes de `--update-baseline`."
+}

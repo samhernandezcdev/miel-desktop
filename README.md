@@ -146,6 +146,7 @@ La CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) ejecuta lo mismo 
 | [`docs/DEPENDENCY_UPDATES.md`](docs/DEPENDENCY_UPDATES.md) | Cómo actualizar dependencias y regenerar los avisos de licencias |
 | [`docs/CLEAN_CLONE_VALIDATION.md`](docs/CLEAN_CLONE_VALIDATION.md) · [`docs/MANUAL_TEST_CHECKLIST.md`](docs/MANUAL_TEST_CHECKLIST.md) | Validación desde un clon limpio y checklist manual de la release |
 | [`docs/LICENSING.md`](docs/LICENSING.md) | Licencias: propuesta y puntos por confirmar |
+| [`docs/PRIVACY.md`](docs/PRIVACY.md) | Qué consulta Miel y qué no; controles preventivos de privacidad |
 | [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md) | Licencias de las dependencias (lista) |
 | [`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt) | Textos completos de licencia y avisos de copyright de terceros; se instala con Miel y se adjunta a cada release |
 | [`docs/PUBLISHING_CHECKLIST.md`](docs/PUBLISHING_CHECKLIST.md) | Checklist de publicación |
@@ -304,7 +305,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same on Win
 
 ## Documentation
 
-Most documents are in Spanish; translations are welcome. See the table in the Spanish section: [`ROADMAP.md`](ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/BEE_GUIDE.md`](docs/BEE_GUIDE.md), [`docs/TEST_LOG.md`](docs/TEST_LOG.md), [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md), [`docs/LICENSING.md`](docs/LICENSING.md), [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md), [`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt), [`CHANGELOG.md`](CHANGELOG.md).
+Most documents are in Spanish; translations are welcome. See the table in the Spanish section: [`ROADMAP.md`](ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/BEE_GUIDE.md`](docs/BEE_GUIDE.md), [`docs/TEST_LOG.md`](docs/TEST_LOG.md), [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md), [`docs/LICENSING.md`](docs/LICENSING.md), [`docs/PRIVACY.md`](docs/PRIVACY.md), [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md), [`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt), [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Contributing
 
