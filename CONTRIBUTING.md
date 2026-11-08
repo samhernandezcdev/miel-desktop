@@ -77,7 +77,7 @@ El catálogo está en `src-tauri/src/mascot/messages.rs`. Tono: tierno, discreto
 
 ## Licencia de las contribuciones
 
-Al enviar un PR confirmas que eres autora o autor de lo que aportas (o tienes derecho a aportarlo) y aceptas que se publique bajo las licencias del proyecto: código bajo la licencia de código y recursos del personaje bajo la de recursos (ver [`docs/LICENSING.md`](docs/LICENSING.md); las licencias definitivas se confirman al publicar). El **nombre y la identidad visual** de Miel se rigen por la política de marca, no por esas licencias.
+Al enviar un PR confirmas que eres autora o autor de lo que aportas (o tienes derecho a aportarlo) y aceptas que se publique bajo la licencia del componente que modificas: código y herramientas bajo la licencia de código, y recursos visuales y documentación bajo la de recursos (propuestas: MIT y CC BY 4.0; ver [`docs/LICENSING.md`](docs/LICENSING.md); las licencias definitivas se confirman al publicar). No hay CLA. Si tu aporte incluye material generado con IA, indícalo en el PR. El **nombre y la identidad visual** de Miel se rigen por la política de marca, no por esas licencias.
 
 ---
 
@@ -143,4 +143,4 @@ Small, focused changes; one PR, one purpose. Clear commit messages (Spanish or E
 
 ## Contribution licensing
 
-By submitting a PR you confirm you are the author (or have the right to contribute the work) and agree it is published under the project's licenses: code under the code license and character assets under the asset license (see [`docs/LICENSING.md`](docs/LICENSING.md); final licenses are confirmed at publication). Miel's **name and visual identity** are governed by the trademark policy, not by those licenses.
+By submitting a PR you confirm you are the author (or have the right to contribute the work) and agree it is published under the license of the component you modify: code and tooling under the code license, and visual assets and documentation under the asset license (proposed: MIT and CC BY 4.0; see [`docs/LICENSING.md`](docs/LICENSING.md); final licenses are confirmed at publication). There is no CLA. If your contribution includes AI-generated material, say so in the PR. Miel's **name and visual identity** are governed by the trademark policy, not by those licenses.

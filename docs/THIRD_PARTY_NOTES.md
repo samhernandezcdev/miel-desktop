@@ -11,7 +11,7 @@ generador no cubre. **No es asesoría legal ni sustituye a los textos de licenci
 |---|---|---|---|
 | Crates de Rust (229) | Enlazados estáticamente en `miel.exe` | Ver `THIRD_PARTY.md` (predominan MIT, Apache-2.0 y dobles) | Se redistribuyen en el instalador |
 | `react`, `react-dom`, `@tauri-apps/api` | Empaquetados en el JS del frontend | MIT / MIT / Apache-2.0 OR MIT | Se redistribuyen en el instalador |
-| NSIS (Nullsoft Scriptable Install System) | Parte del instalador generado por Tauri | Licencia propia de NSIS (tipo zlib/libpng, con componentes de compresión con licencias propias) | Revisar al redistribuir |
+| NSIS 3.13 (Nullsoft Scriptable Install System) y plugin `nsis_tauri_utils` | Parte del instalador generado por Tauri (compresión LZMA sólida; verificado) | NSIS: zlib/libpng y **CPL 1.0** para el módulo LZMA (bzip2 no incrustado). `nsis_tauri_utils`: Apache-2.0 OR MIT | Avisos aún incompletos en `THIRD_PARTY_LICENSES.txt`; ver `LICENSING.md` (sección NSIS) |
 | Runtime **WebView2** | **No** se incluye; lo aporta Windows o el *bootstrapper* de Microsoft | Licencia de Microsoft | Miel no lo redistribuye |
 | Fuentes | **No** se incluyen; la burbuja usa fuentes del sistema (`Segoe UI`) | n/a | |
 

@@ -2,7 +2,7 @@
 
 > **Borrador no definitivo.** No es asesoría legal. Antes de publicarlo: confirmar quién es titular de la marca,
 > revisar el nombre "Miel" en registros de marcas (México y países de distribución) y el uso de "BKODE".
-> Hasta entonces no afirmes que "Miel" es una marca registrada ni uses ®.
+> Hasta entonces no afirmes que "Miel" o "BKODE" son marcas registradas ni uses ®. Este documento **no declara registros**; solo describe cómo se espera que se use el nombre.
 
 ## Qué cubre
 

@@ -5,7 +5,7 @@
 ## Recursos originales de Miel: CC BY 4.0 (propuesta)
 
 Los recursos originales de Miel (SVG y CSS del personaje, paleta, hojas de estados e imágenes de documentación,
-y los iconos de la aplicación, sujeto a confirmar) © [AÑO] [TITULAR DEL COPYRIGHT], se propone licenciarlos bajo
+y los iconos de la aplicación, sujeto a confirmar) © 2026 [TITULAR DEL COPYRIGHT: pendiente de confirmar], se propone licenciarlos bajo
 **Creative Commons Attribution 4.0 International (CC BY 4.0)**.
 
 - Texto legal oficial (*legal code*): <https://creativecommons.org/licenses/by/4.0/legalcode>
@@ -23,5 +23,10 @@ El **nombre "Miel"**, el **logotipo** y la **identidad visual** como marca no se
 
 ### Archivos incluidos (propuesta)
 
-`src/assets/bee/*` · `miel-bee-mascot/assets/*` · `docs/sheet-dark.png` · `docs/sheet-light.png` · `docs/img/*` ·
-`src-tauri/icons/*` (por confirmar). El generador `tools/build_bee.py` es código (licencia de código); sus salidas son recursos.
+`src/assets/bee/*.svg` y `palette.json` · `miel-bee-mascot/assets/bee/*.svg` y `palette.json` · `miel-bee-mascot/docs/sheet-*.png` ·
+`docs/sheet-dark.png` · `docs/sheet-light.png` · `docs/img/*` · documentación original (`README`, `docs/*.md`), salvo fragmentos de código (MIT) y materiales de terceros.
+`src-tauri/icons/*`: **por confirmar** (origen sin documentar; además son identidad de marca). `bee.css` y el CSS de la aplicación van con la licencia de código (MIT);
+si el CSS está embebido en un SVG, el SVG se rige por esta licencia. El generador `tools/build_bee.py` es código (MIT); sus salidas SVG son recursos.
+
+### Alcance condicionado
+Solo se licencia aquello sobre lo que existan derechos suficientes. Para material íntegramente generado por IA se licencia "en la medida en que existan derechos"; no se afirma titularidad exclusiva. Ver `../LICENSING.md`, "Asistencia de IA".
