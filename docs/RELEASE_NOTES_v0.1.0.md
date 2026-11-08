@@ -65,7 +65,7 @@ Si no coincide, **no lo ejecutes** y abre un issue.
 
 ## Licencias y dependencias
 
-[Licencias: por confirmar antes de publicar; sustituir este párrafo por la licencia definitiva de código y recursos.] Avisos y licencias completos de terceros: `THIRD_PARTY_LICENSES.txt` (adjunto a esta release y también instalado junto a Miel en `%LOCALAPPDATA%\Miel`). Lista: `docs/THIRD_PARTY.md`.
+**Licencias:** código bajo MIT o Apache-2.0 (a tu elección); arte, personaje y documentación bajo CC BY 4.0; el nombre "Miel", BKODE y el logotipo, sin licenciar (política de marca en `TRADEMARK_POLICY.md`). © 2026 Samuel David Hernández Contreras (BKODE). Avisos y licencias completos de terceros: `THIRD_PARTY_LICENSES.txt` (adjunto a esta release y también instalado junto a Miel en `%LOCALAPPDATA%\Miel`). Lista: `docs/THIRD_PARTY.md`.
 
 ## Contribuir y reportar
 
@@ -129,7 +129,7 @@ If it does not match, **do not run it** and open an issue.
 
 ## Licenses and dependencies
 
-[Licenses: to be confirmed before publishing; replace this paragraph with the final code and asset licenses.] Full third-party notices and licenses: `THIRD_PARTY_LICENSES.txt` (attached to this release and also installed next to Miel in `%LOCALAPPDATA%\Miel`). List: `docs/THIRD_PARTY.md`.
+**Licenses:** code under MIT or Apache-2.0 (at your option); art, character and documentation under CC BY 4.0; the name "Miel", BKODE and the logo are not licensed (trademark policy in `TRADEMARK_POLICY.md`). © 2026 Samuel David Hernández Contreras (BKODE). Full third-party notices and licenses: `THIRD_PARTY_LICENSES.txt` (attached to this release and also installed next to Miel in `%LOCALAPPDATA%\Miel`). List: `docs/THIRD_PARTY.md`.
 
 ## Contributing and reporting
 

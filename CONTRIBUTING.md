@@ -75,9 +75,16 @@ El catálogo está en `src-tauri/src/mascot/messages.rs`. Tono: tierno, discreto
 - Rellena la plantilla del PR y actualiza [`CHANGELOG.md`](CHANGELOG.md) (sección *Sin publicar*).
 - Una persona mantenedora revisará el PR; puede pedir cambios. Sé paciente: es un proyecto comunitario.
 
-## Licencia de las contribuciones
+## Licencia de las contribuciones y DCO
 
-Al enviar un PR confirmas que eres autora o autor de lo que aportas (o tienes derecho a aportarlo) y aceptas que se publique bajo la licencia del componente que modificas: código y herramientas bajo la licencia de código, y recursos visuales y documentación bajo la de recursos (propuestas: MIT y CC BY 4.0; ver [`docs/LICENSING.md`](docs/LICENSING.md); las licencias definitivas se confirman al publicar). No hay CLA. Si tu aporte incluye material generado con IA, indícalo en el PR. El **nombre y la identidad visual** de Miel se rigen por la política de marca, no por esas licencias.
+No hay CLA. Cada commit debe llevar la línea `Signed-off-by: Nombre <correo>` (con `git commit -s`), con la que certificas el [Developer Certificate of Origin 1.1](DCO.md): que tienes derecho a aportar el cambio bajo la licencia del archivo.
+
+Tu contribución se publica bajo la licencia del componente que modificas:
+- código, herramientas y CSS funcional → **MIT OR Apache-2.0** (a elección de quien lo reciba);
+- arte, personaje, stickers y documentación → **CC BY 4.0**;
+- el **nombre y la identidad visual** de Miel (nombre, BKODE, logotipo e iconos) no se licencian y se rigen por la [política de marca](TRADEMARK_POLICY.md).
+
+Si tu aporte incluye material generado con IA, indícalo en el PR. Detalles en [`docs/LICENSING.md`](docs/LICENSING.md).
 
 ---
 
@@ -141,6 +148,13 @@ The catalog lives in `src-tauri/src/mascot/messages.rs`. Tone: tender, discreet,
 
 Small, focused changes; one PR, one purpose. Clear commit messages (Spanish or English), imperative, with the why. Fill in the PR template and update [`CHANGELOG.md`](CHANGELOG.md). A maintainer will review; please be patient.
 
-## Contribution licensing
+## Contribution licensing and DCO
 
-By submitting a PR you confirm you are the author (or have the right to contribute the work) and agree it is published under the license of the component you modify: code and tooling under the code license, and visual assets and documentation under the asset license (proposed: MIT and CC BY 4.0; see [`docs/LICENSING.md`](docs/LICENSING.md); final licenses are confirmed at publication). There is no CLA. If your contribution includes AI-generated material, say so in the PR. Miel's **name and visual identity** are governed by the trademark policy, not by those licenses.
+There is no CLA. Every commit must carry a `Signed-off-by: Name <email>` line (use `git commit -s`), certifying the [Developer Certificate of Origin 1.1](DCO.md): that you have the right to submit the change under the file's license.
+
+Your contribution is published under the license of the component you modify:
+- code, tooling and functional CSS → **MIT OR Apache-2.0** (at the recipient's option);
+- art, character, stickers and documentation → **CC BY 4.0**;
+- Miel's **name and visual identity** (name, BKODE, logo and icons) are not licensed and are governed by the [trademark policy](TRADEMARK_POLICY.md).
+
+If your contribution includes AI-generated material, say so in the PR. Details in [`docs/LICENSING.md`](docs/LICENSING.md).

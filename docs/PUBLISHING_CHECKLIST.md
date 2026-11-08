@@ -7,8 +7,8 @@ La release v0.1.0 se prepara como **pre-release** y en **borrador**: no se publi
 
 ## 0. Decisiones y datos que faltan (bloquean la publicación)
 
-- [ ] **Titular del copyright y año** (ver `docs/LICENSING.md`, "Por confirmar" 1 y 2: titularidad y autoría humana/IA).
-- [ ] **Licencias definitivas** (propuesta: código MIT, recursos CC BY 4.0, marca aparte). Crear `LICENSE` (desde `docs/legal-drafts/LICENSE-MIT.draft.txt`), `LICENSE-ASSETS` (con el texto oficial de CC BY 4.0) y la política de marca final (`TRADEMARK.md`, desde `docs/legal-drafts/TRADEMARK_POLICY.draft.md`).
+- [x] **Titular y año:** Copyright © 2026 Samuel David Hernández Contreras (BKODE) (confirmado el 2026-11-08; ver `docs/LICENSING.md`). Pendiente opcional: describir la aportación creativa humana.
+- [x] **Licencias:** código MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`), arte y documentación CC BY 4.0 (`LICENSE-ASSETS`), marca sin licenciar (`TRADEMARK_POLICY.md`), `NOTICE`, DCO. Antes de publicar: revisión jurídica, búsqueda de anterioridades de la marca y confirmar que la CI de ese commit está en verde.
 - [ ] **Nombre "Miel"**: búsqueda en registros de marcas (México y países de distribución); y uso de "BKODE".
 - [ ] **Dominio `bkode.lat`**: confirmar que lo controlas (de él sale el identificador `lat.bkode.miel`, que **no debe cambiar** después de publicar).
 - [ ] **Usuario u organización de GitHub** y nombre del repositorio.
@@ -27,10 +27,9 @@ Select-String -Path (Get-ChildItem -Recurse -File -Include *.md,*.yml,*.txt | Wh
 | `[CONTACTO DE CONDUCTA…]`, `[CONDUCT CONTACT…]` | `CODE_OF_CONDUCT.md` | Un contacto real |
 | `[CONTACTO DE SEGURIDAD…]`, `[SECURITY CONTACT…]` | `SECURITY.md` | Un contacto real (o quita el correo si solo usas el reporte privado) |
 | `FECHA POR DEFINIR` | `CHANGELOG.md` | Fecha de la release |
-| `[SHA256 …]`, `[Licencias…]` | `docs/RELEASE_NOTES_v0.1.0.md` | Hash real (sección 5) y licencia definitiva |
-| `[AÑO]`, `[TITULAR…]` | `docs/legal-drafts/*` | Al crear los archivos de licencia |
+| `[SHA256 …]` | `docs/RELEASE_NOTES_v0.1.0.md` | Hash real (sección 5) |
 
-Actualiza también el README (secciones *Licencia* y *Limitaciones*) y `ROADMAP.md` (Hito 0) cuando decidas las licencias. Declara la licencia en `package.json` y `src-tauri/Cargo.toml` solo **después** de confirmarla.
+El README y los manifiestos (`package.json`, `src-tauri/Cargo.toml`, `package-lock.json`) ya declaran las licencias. Falta reflejarlas en `ROADMAP.md` (Hito 0) y `CHANGELOG.md`.
 
 ## 2. Revisión de lo que se va a versionar (antes del primer commit)
 

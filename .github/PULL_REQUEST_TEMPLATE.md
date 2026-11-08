@@ -20,4 +20,4 @@ Relacionado con / Related to: #
 - [ ] No modifiqué a mano los SVG originales de `src/assets/bee/` (si cambié el personaje, fue desde `tools/build_bee.py`) / I did not hand-edit the original SVGs
 - [ ] No incluyo capturas con contenido privado ni rutas personales / No private screenshots or personal paths
 - [ ] Actualicé `CHANGELOG.md` y la documentación afectada / Updated CHANGELOG.md and affected docs
-- [ ] Acepto que mi contribución se publique bajo las licencias del proyecto (ver `docs/LICENSING.md`) / I agree my contribution is published under the project's licenses
+- [ ] Mis commits llevan `Signed-off-by` (DCO, ver `DCO.md`) y acepto que se publiquen bajo la licencia del componente que modifico (`docs/LICENSING.md`) / My commits are signed off (DCO) and I agree they are published under the license of the component I modify

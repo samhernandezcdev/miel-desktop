@@ -1,0 +1,35 @@
+Miel Desktop
+Copyright © 2026 Samuel David Hernández Contreras (BKODE)
+
+Este producto se distribuye por componentes bajo distintas licencias.
+This product is distributed by component under different licenses.
+
+  Código, herramientas y CSS funcional   MIT OR Apache-2.0   (LICENSE-MIT, LICENSE-APACHE)
+  Code, tooling and functional CSS       a elección de quien lo recibe / at the recipient's option
+  Arte, personaje, stickers, docs        CC BY 4.0           (LICENSE-ASSETS)
+  Art, character, stickers, docs
+  Nombre "Miel", logotipo, identidad     Sin licenciar; política de marca (TRADEMARK_POLICY.md)
+  Name, logo, identity                   Not licensed; see the trademark policy
+  Dependencias y componentes de terceros Las suyas (THIRD_PARTY_LICENSES.txt)
+  Third-party components                 Their own licenses
+
+Archivos mixtos / Mixed files:
+  - src/assets/bee/bee-rig.svg y bee-rig.nostyle.svg: el archivo completo, CC BY 4.0
+    (el CSS embebido es el de bee.css, que como archivo independiente es código).
+  - miel-bee-mascot/preview/index.html: SVG bajo CC BY 4.0; código y CSS de la página bajo
+    MIT OR Apache-2.0.
+  - src-tauri/icons/*: identidad de la aplicación; no licenciados (ver TRADEMARK_POLICY.md).
+
+Asistencia de IA / AI assistance:
+  Parte del código, las pruebas y la documentación se desarrolló con asistencia de herramientas
+  de IA generativa (Claude, de Anthropic). Las licencias se aplican en la medida en que existan
+  derechos sobre cada obra; no se afirma titularidad exclusiva sobre resultados íntegramente
+  generados por IA. / Part of the code, tests and documentation was developed with generative AI
+  assistance (Claude, by Anthropic). The licenses apply to the extent rights exist in each work;
+  no exclusive ownership is claimed over output generated entirely by AI.
+
+Instalador / Installer:
+  El instalador se genera con NSIS 3.13 (zlib/libpng; módulo LZMA bajo Common Public License 1.0)
+  y el plugin nsis_tauri_utils (MIT OR Apache-2.0). Textos y avisos completos en
+  THIRD_PARTY_LICENSES.txt. / The installer is built with NSIS 3.13 and the nsis_tauri_utils plugin;
+  full notices in THIRD_PARTY_LICENSES.txt.

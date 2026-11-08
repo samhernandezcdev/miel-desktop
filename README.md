@@ -182,11 +182,17 @@ Abre un [issue](../../issues/new/choose) con la plantilla de error (versión de 
 - Sin ventana de configuración ni opciones de tamaño/velocidad en la bandeja (solo por JSON).
 - Si WebView2 muere, la ventana queda vacía (la bandeja sigue funcionando).
 - Solo Windows 11 x64.
-- **Licencias**: las licencias definitivas se confirman al publicar; hasta entonces ver [`docs/LICENSING.md`](docs/LICENSING.md).
+- **Licencias**: ver [`docs/LICENSING.md`](docs/LICENSING.md). Quedan pendientes la búsqueda de anterioridades de la marca y una revisión jurídica.
 
 ## Licencia
 
-Propuesta (**pendiente de confirmar titularidad y derechos antes de publicar**; ver [`docs/LICENSING.md`](docs/LICENSING.md)): código bajo MIT; recursos originales del personaje bajo CC BY 4.0; nombre e identidad visual de Miel con política de marca aparte. Las dependencias de terceros conservan sus licencias ([`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt), [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md)).
+Copyright © 2026 Samuel David Hernández Contreras (BKODE).
+
+- **Código y herramientas:** [MIT](LICENSE-MIT) o [Apache-2.0](LICENSE-APACHE), a tu elección.
+- **Arte, personaje, stickers y documentación original:** [CC BY 4.0](LICENSE-ASSETS); cita a "Miel" y a su autor e indica si hiciste cambios.
+- **Nombre "Miel", BKODE, logotipo e iconos de la aplicación:** sin licenciar; ver la [política de marca](TRADEMARK_POLICY.md). No se afirma ningún registro de marca.
+- **Terceros:** conservan sus licencias ([`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt), [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md)).
+- **Contribuciones:** con [DCO](DCO.md) (`Signed-off-by`), sin CLA. Detalles en [`docs/LICENSING.md`](docs/LICENSING.md) y [`NOTICE`](NOTICE).
 
 ---
 
@@ -318,8 +324,14 @@ Open an [issue](../../issues/new/choose) with the bug template (Miel and Windows
 - No settings window and no size/speed options in the tray (JSON only).
 - If WebView2 dies, the window stays empty (the tray keeps working).
 - Windows 11 x64 only. Interface text and phrases are in Spanish only.
-- **Licenses**: final licenses are confirmed at publication time; until then see [`docs/LICENSING.md`](docs/LICENSING.md).
+- **Licenses**: see [`docs/LICENSING.md`](docs/LICENSING.md). A trademark prior-art search and a legal review are still pending.
 
 ## License
 
-Proposal (**ownership and rights to be confirmed before publishing**; see [`docs/LICENSING.md`](docs/LICENSING.md)): code under MIT; Miel's original character assets under CC BY 4.0; Miel's name and visual identity under a separate trademark policy. Third-party dependencies keep their own licenses ([`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt), [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md)).
+Copyright © 2026 Samuel David Hernández Contreras (BKODE).
+
+- **Code and tooling:** [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+- **Art, character, stickers and original documentation:** [CC BY 4.0](LICENSE-ASSETS); credit "Miel" and its author and indicate changes.
+- **The name "Miel", BKODE, the logo and the application icons:** not licensed; see the [trademark policy](TRADEMARK_POLICY.md). No trademark registration is claimed.
+- **Third parties:** keep their own licenses ([`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt), [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md)).
+- **Contributions:** under the [DCO](DCO.md) (`Signed-off-by`), no CLA. Details in [`docs/LICENSING.md`](docs/LICENSING.md) and [`NOTICE`](NOTICE).

@@ -283,11 +283,14 @@ OTROS COMPONENTES / OTHER COMPONENTS
 * Microsoft Edge WebView2 Runtime: NO se incluye en el instalador. Lo aporta Windows o el bootstrapper de
   Microsoft, bajo sus propios términos. / NOT included in the installer; provided by Windows or Microsoft's
   bootstrapper under Microsoft's own terms.
-* NSIS (Nullsoft Scriptable Install System): el instalador se genera con NSIS y contiene componentes suyos.
-  Licencia: https://nsis.sourceforge.io/License (zlib/libpng; los módulos de compresión tienen licencias
-  propias indicadas allí). / The installer is built with NSIS and contains NSIS components.
+* NSIS 3.13 (Nullsoft Scriptable Install System) y el plugin nsis_tauri_utils: el instalador se genera con ellos y
+  contiene componentes suyos (compresión LZMA: Common Public License 1.0; resto: zlib/libpng; plugin: MIT OR Apache-2.0).
+  Los avisos y textos completos están al final de esta sección. / The installer is built with NSIS and the
+  nsis_tauri_utils plugin and contains their components; full notices and texts follow this list.
 * Fuentes tipográficas: no se incluyen; la burbuja usa fuentes del sistema. / No fonts are bundled.
 """
+
+NSIS_NOTICES = (ROOT / "tools" / "nsis-notices.txt").read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
 def build() -> str:
@@ -307,6 +310,8 @@ def build() -> str:
         "plus procedural macros that run at build time (included as a precaution).\n\n",
         rust,
         OTHER,
+        "\n" + RULE + "\nAVISOS DEL INSTALADOR / INSTALLER NOTICES\n" + RULE + "\n\n",
+        NSIS_NOTICES,
     ]
     return lf("".join(parts))
 
