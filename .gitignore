@@ -36,3 +36,6 @@ frontend-errors.log
 .idea/
 Thumbs.db
 desktop.ini
+
+# GIF de la comparacion visual (se regeneran con tools/anim_compare)
+docs/img/anim-compare/
