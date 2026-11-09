@@ -52,6 +52,8 @@
     "Win32::UI::Input::KeyboardAndMouse::LASTINPUTINFO",
     "Win32::System::SystemInformation::GetTickCount",
     "Win32::System::SystemInformation::GetTickCount64",
+    "Win32::System::SystemInformation::GetLocalTime",
+    "Win32::Foundation::SYSTEMTIME",
     "Win32::UI::Shell::SHQueryUserNotificationState",
     "Win32::UI::Shell::QUERY_USER_NOTIFICATION_STATE",
     "Win32::UI::Shell::QUNS_BUSY",

@@ -22,12 +22,13 @@
 | Tiempo desde la última entrada (`GetLastInputInfo` + `GetTickCount`) | Dormir tras un rato sin usar el equipo | **Planificado** (v0.2.0) | Sueño |
 | Estado de notificaciones del usuario (`SHQueryUserNotificationState`) | No molestar con pantalla completa, juego Direct3D o modo presentación | **Planificado** (v0.2.0) | No molestar automático |
 | Bloqueo/desbloqueo de sesión y suspensión/reanudación (mensajes de Windows) | Recalcular el estado al volver | **Planificado** (v0.2.0) | (con Sueño) |
+| Hora local del equipo (`GetLocalTime`, solo la hora) | Mensajes, saludo y ritmo de descanso según la franja del día | **Planificado** (v0.2.0, E6b) | Hora del día |
 
 ### Lo que NO lee ni hace
 Miel **no**: lee lo que escribes (ni teclas ni pulsaciones), registra clics, hace capturas de pantalla, lee títulos o contenido de ventanas, lee el contenido de tus archivos ni conoce qué aplicaciones usas. Tampoco manipula tu cursor ni genera entradas.
 
 ## Listas de la comprobación automática
-**Permitido** (lista exacta en [`tools/privacy_policy.json`](../tools/privacy_policy.json)): `GetLastInputInfo`, `GetTickCount`/`GetTickCount64`, `SHQueryUserNotificationState`, notificaciones de sesión (`WTSRegisterSessionNotification`) y de energía (`WM_POWERBROADCAST`), y la geometría, monitores, DPI y ventanas que Miel ya usa.
+**Permitido** (lista exacta en [`tools/privacy_policy.json`](../tools/privacy_policy.json)): `GetLastInputInfo`, `GetTickCount`/`GetTickCount64`, `GetLocalTime` (E6b), `SHQueryUserNotificationState`, notificaciones de sesión (`WTSRegisterSessionNotification`) y de energía (`WM_POWERBROADCAST`), y la geometría, monitores, DPI y ventanas que Miel ya usa.
 
 **Prohibido** (la comprobación falla si aparece en `src-tauri/src/**` o `src/**`):
 - Teclado y ratón globales: `SetWindowsHookEx*`, `RegisterRawInputDevices`, `GetRawInputData`, `GetAsyncKeyState`, `GetKeyState`, `GetKeyboardState`.
@@ -43,6 +44,11 @@ Miel **no**: lee lo que escribes (ni teclas ni pulsaciones), registra clics, hac
 - Cuenta también entradas generadas por programas (p. ej. escritorio remoto, accesibilidad o herramientas de automatización): un programa que simule actividad mantiene despierta a Miel.
 - Se calcula con `GetTickCount`, un contador de 32 bits que **da la vuelta cada ≈ 49,7 días**; Miel resta con aritmética `wrapping` y trata lecturas anómalas con prudencia (no despierta ni duerme por una lectura imposible).
 - Puede comportarse distinto con sesiones remotas, con el equipo bloqueado o en un cambio de usuario.
+
+**`GetLocalTime`** (hora del día, E6b)
+- Miel lee **solo la hora** (0–23) del reloj local del equipo, para elegir entre cuatro franjas (madrugada 00:00–05:59, mañana 06:00–11:59, tarde 12:00–18:59, noche 19:00–23:59). No usa fecha, zona horaria ni ubicación, no lo guarda ni lo envía.
+- **No tiene sondeo propio:** Miel consulta la hora solo cuando ya despierta por otra razón (decidir qué hacer, elegir una frase, volver de una pausa); si está pausada, oculta, dormida o suprimida, no la consulta.
+- Si la hora del equipo es incorrecta, las frases corresponderán a esa hora. Se apaga con el interruptor «Hora del día» (usa solo la hora local de tu equipo).
 
 **`SHQueryUserNotificationState`** (No molestar)
 - Es una **heurística de Windows**, no un detector de pantalla completa ni del asistente de concentración (*Focus Assist*). Puede dar **falsos positivos** (p. ej. vídeo a pantalla completa) y **falsos negativos** (juegos sin bordes, algunas apps).
@@ -84,12 +90,13 @@ La CI ejecuta el trabajo `privacy` (autotest y comprobación) en cada push y pul
 | Time since the last input (`GetLastInputInfo` + `GetTickCount`) | Fall asleep after a while without using the computer | **Planned** (v0.2.0) | Sleep |
 | User notification state (`SHQueryUserNotificationState`) | Do not disturb during full screen, exclusive Direct3D or presentation mode | **Planned** (v0.2.0) | Automatic Do Not Disturb |
 | Session lock/unlock and suspend/resume (Windows messages) | Recompute state on return | **Planned** (v0.2.0) | (with Sleep) |
+| Local computer time (`GetLocalTime`, hour only) | Messages, greeting and rest rhythm by time of day | **Planned** (v0.2.0, E6b) | Time of day |
 
 ### What it does NOT read or do
 Miel does **not**: read what you type (no keys, no keystrokes), record clicks, take screenshots, read window titles or contents, read the contents of your files, or know which applications you use. It does not move your cursor or generate input.
 
 ## Lists enforced by the automatic check
-**Allowed** (exact list in [`tools/privacy_policy.json`](../tools/privacy_policy.json)): `GetLastInputInfo`, `GetTickCount`/`GetTickCount64`, `SHQueryUserNotificationState`, session notifications (`WTSRegisterSessionNotification`) and power notifications (`WM_POWERBROADCAST`), plus the geometry, monitor, DPI and window APIs Miel already uses.
+**Allowed** (exact list in [`tools/privacy_policy.json`](../tools/privacy_policy.json)): `GetLastInputInfo`, `GetTickCount`/`GetTickCount64`, `GetLocalTime` (E6b), `SHQueryUserNotificationState`, session notifications (`WTSRegisterSessionNotification`) and power notifications (`WM_POWERBROADCAST`), plus the geometry, monitor, DPI and window APIs Miel already uses.
 
 **Forbidden** (the check fails if they appear in `src-tauri/src/**` or `src/**`):
 - Global keyboard and mouse: `SetWindowsHookEx*`, `RegisterRawInputDevices`, `GetRawInputData`, `GetAsyncKeyState`, `GetKeyState`, `GetKeyboardState`.
@@ -105,6 +112,11 @@ Miel does **not**: read what you type (no keys, no keystrokes), record clicks, t
 - It also counts input generated by programs (e.g. remote desktop, accessibility or automation tools): a program that simulates activity keeps Miel awake.
 - It is computed with `GetTickCount`, a 32-bit counter that **wraps every ≈ 49.7 days**; Miel subtracts with wrapping arithmetic and handles anomalous readings defensively (an impossible reading neither wakes nor sleeps Miel).
 - It may behave differently with remote sessions, a locked machine or a user switch.
+
+**`GetLocalTime`** (time of day, E6b)
+- Miel reads **only the hour** (0–23) of the computer's local clock, to pick one of four bands (early morning 00:00–05:59, morning 06:00–11:59, afternoon 12:00–18:59, evening 19:00–23:59). It uses no date, time zone or location, and neither stores nor sends it.
+- **It has no polling of its own:** Miel looks at the time only when it already wakes for another reason (deciding what to do, picking a phrase, coming back from a pause); while paused, hidden, asleep or suppressed it does not read it.
+- If the computer's clock is wrong, the phrases will match that wrong time. It is turned off with the "Time of day" switch (it uses only your computer's local time).
 
 **`SHQueryUserNotificationState`** (Do Not Disturb)
 - It is a **Windows heuristic**, not a full-screen detector nor a *Focus Assist* detector. It can give **false positives** (e.g. full-screen video) and **false negatives** (borderless games, some apps).

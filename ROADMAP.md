@@ -12,7 +12,7 @@ Valen para todas las etapas. Una contribución que los rompa no se acepta, aunqu
 
 1. **Local primero.** Todo funciona sin Internet. Lo que necesite red (etapa 3) es opcional y viene apagado.
 2. **Cada capacidad se activa y se apaga por separado.** Hay dos clases:
-   - **Señales básicas del sistema** (tiempo de inactividad como un simple contador, estado de pantalla completa/presentación, bloqueo y suspensión de la sesión, posición del cursor): no revelan qué haces ni qué apps usas, se guardan sin historial y **pueden venir activadas por defecto** (decisión para v0.2.0). Cada una tiene su interruptor en ajustes, que explica qué señal consulta.
+   - **Señales básicas del sistema** (tiempo de inactividad como un simple contador, estado de pantalla completa/presentación, bloqueo y suspensión de la sesión, posición del cursor, hora local del equipo): no revelan qué haces ni qué apps usas, se guardan sin historial y **pueden venir activadas por defecto** (decisión para v0.2.0). Cada una tiene su interruptor en ajustes, que explica qué señal consulta.
    - **Capacidades contextuales sensibles** (cualquier cosa que consulte aplicaciones, títulos de ventanas o carpetas): **siempre opt-in**, vienen apagadas y se explican antes de encenderlas.
 3. **Lo que Miel nunca hará:** leer lo que escribes, leer el contenido de tus archivos, tomar capturas de pantalla, enviar datos sin que lo hayas activado y puedas ver qué sale, o recopilar telemetría.
 4. **Discreta.** Poca CPU en reposo, movimiento suave, respeto a `prefers-reduced-motion`, y siempre se puede pausar u ocultar desde la bandeja.
@@ -55,7 +55,7 @@ Orden sugerido: A0 y A1 primero, porque todo lo demás necesita poder apagarse y
 - [ ] Un interruptor por cada capacidad nueva de este hito y de las siguientes.
 - [ ] Tamaño de la abeja, intervalo de mensajes, movimiento reducido y seguimiento.
 
-> **Plan técnico de v0.2.0 (A0, A1, A3, A4):** [`docs/plan/v0.2.0.md`](docs/plan/v0.2.0.md). En v0.2.0, A1, A3 y A4 son señales básicas y vienen **activadas por defecto**, cada una con su interruptor; A4 se mide con la build de producción antes de publicar.
+> **Plan técnico de v0.2.0 (A0, A1, A3, A4 y A6 mínima):** [`docs/plan/v0.2.0.md`](docs/plan/v0.2.0.md). En v0.2.0, A1, A3, A4 y A6 son señales básicas y vienen **activadas por defecto**, cada una con su interruptor; A4 se mide con la build de producción antes de publicar. A6 entra en versión mínima (entrega E6b, tras A4).
 
 ### A1. No molestar automático
 - [ ] Ocultarse o quedarse quieta con apps a pantalla completa, juegos exclusivos y modo presentación, apoyándose en `SHQueryUserNotificationState`, que informa de ese estado sin saber qué app es. Resolvería, en parte, la limitación actual de que Miel aparece encima de todo.
@@ -88,9 +88,10 @@ Orden sugerido: A0 y A1 primero, porque todo lo demás necesita poder apagarse y
 - [ ] Preferible resolver el arrastre en Rust para mantener las capabilities del frontend mínimas.
 
 ### A6. Comportamientos por hora del día
-- [ ] Solo el reloj local. Expresión y frases por franja horaria.
+- [ ] **Versión mínima en v0.2.0 (entrega E6b, aprobada el 2026-11-09):** franjas de hora local (madrugada 00:00–05:59, mañana 06:00–11:59, tarde 12:00–18:59, noche 19:00–23:59) con mensajes locales por franja, pesos de la máquina de estados por franja (más descanso de madrugada, sin expresiones ni SVG nuevos) y un saludo por franja la primera vez que Miel habla tras arrancar o desbloquear. Lee la hora con `GetLocalTime` (solo la hora), **sin sondeo ni temporizador nuevo**, con un interruptor en ajustes («usa solo la hora local de tu equipo»), activado por defecto.
+- [ ] Solo el reloj local. Expresión y frases por franja horaria. *(Lo que exceda la versión mínima —expresiones propias por franja— queda para una versión posterior.)*
 - [ ] Tono: sugiere y no ordena. A las 3 de la mañana Miel se ve cansada, pero no te manda a dormir.
-- [ ] Tests con reloj inyectado, incluido el cambio de horario de verano.
+- [ ] Tests con reloj inyectado, incluido el cambio de horario de verano (en la versión mínima, un salto de hora no repite el saludo).
 
 **Terminado cuando:** cada capacidad se puede apagar desde ajustes, tiene tests de Rust, está anotada en `docs/TEST_LOG.md` y el uso de CPU en reposo se midió con la build de producción.
 
