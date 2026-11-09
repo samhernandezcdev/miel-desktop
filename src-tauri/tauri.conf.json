@@ -47,6 +47,10 @@
       "icons/icon.ico"
     ],
     "resources": {
+      "../LICENSE-MIT": "LICENSE-MIT",
+      "../LICENSE-APACHE": "LICENSE-APACHE",
+      "../LICENSE-ASSETS": "LICENSE-ASSETS",
+      "../NOTICE": "NOTICE",
       "../THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt"
     },
     "shortDescription": "Miel: una mascota de escritorio ligera y local para Windows 11",

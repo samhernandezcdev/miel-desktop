@@ -53,7 +53,17 @@ El instalador se genera con **NSIS 3.13**, compresión **LZMA sólida** (`SetCom
 | WebView2 | No se redistribuye; `NSISdl` lo descarga de Microsoft si falta | idem |
 
 El texto de NSIS proviene de su archivo `COPYING` (© 1999-2026 Contributors) y está en `tools/nsis-notices.txt`; lo incorpora `tools/gen_third_party_licenses.py`.
-Limitación: el log `makensis` disponible es de una sesión anterior y su tamaño (1 276 934 B) es cercano pero no idéntico al del instalador provisional (1 276 357 B); para el instalador definitivo hay que generar y conservar un log propio.
+### Licencias de Miel dentro del instalador (E0c)
+
+`src-tauri/tauri.conf.json` (`bundle.resources`) incluye en la carpeta de instalación, junto a `miel.exe`: `LICENSE-MIT`, `LICENSE-APACHE`, `LICENSE-ASSETS`, `NOTICE` y `THIRD_PARTY_LICENSES.txt`. El desinstalador generado por Tauri los borra (`Delete "$INSTDIR\…"`).
+
+| Comprobación | Resultado (build del 2026-11-08, versión 0.1.0 sin cambios) |
+|---|---|
+| `installer.nsi` generado por Tauri | 5 instrucciones `File /a` y 5 `Delete` para esos archivos |
+| `makensis -V4` | Lista `File:` con 11 358 B (APACHE), 21 170 B (ASSETS), 1 097 B (MIT), 2 182 B (NOTICE) y 253 789 B (THIRD_PARTY): coinciden con los del repositorio; `Using lzma (compress whole)` |
+| `tools/check_install.ps1` | Ampliado: con `-Phase Installed -RepoRoot .` exige miel.exe y los 5 archivos no vacíos y con el mismo SHA-256 que el repositorio; con `-Phase Uninstalled` exige que ya no estén. Probado con una carpeta de prueba (caso correcto y casos de fallo) |
+
+Límites: (1) Tauri invoca `makensis` con `-V3` incluso con `tauri build -v`; el log `-V4` se obtuvo **volviendo a ejecutar `makensis -V4` sobre el mismo `installer.nsi`** que generó el build, no desde dentro de Tauri, y el `.exe` intermedio resultante pesa 1 286 419 B frente a 1 285 944 B del instalador empaquetado (misma entrada sin comprimir; no se investigó la diferencia). (2) El contenido real del instalador **no se ha verificado instalándolo** (no se instaló nada en este equipo): el paso manual es `tools/check_install.ps1 -Phase Installed -RepoRoot .` tras instalar y `-Phase Uninstalled` tras desinstalar. (3) El log se guarda fuera del repositorio (contiene rutas locales).
 
 ## Iconos (`src-tauri/icons/*`)
 
@@ -73,7 +83,7 @@ Sin CLA. Cada contribución se firma con el *Developer Certificate of Origin* 1.
 - [ ] **Contacto de marca:** hoy remite a los *issues* del repositorio; decidir si se publica un correo.
 - [ ] **Iconos:** confirmar que se consideran logotipo (sin licenciar) y, si se quiere, documentar su origen.
 - [ ] **Originalidad del personaje:** buscar similitudes con mascotas existentes antes de promocionarlo ([`BEE_GUIDE.md`](BEE_GUIDE.md) §8 afirma construcción desde cero, lo que no garantiza ausencia de conflictos).
-- [ ] **Licencia de Miel dentro del instalador:** hoy el instalador solo lleva `THIRD_PARTY_LICENSES.txt`; decidir si también `LICENSE-MIT`/`LICENSE-APACHE` (cambia `tauri.conf.json`).
+- [x] **Licencia de Miel dentro del instalador:** resuelto en E0c (ver arriba); falta la comprobación manual tras instalar con `tools/check_install.ps1`.
 - [ ] **DCO:** decidir si se verifica automáticamente (aplicación de GitHub o comprobación en CI).
 - [ ] **`ROADMAP.md` y `CHANGELOG.md`:** reflejar las licencias en el Hito 0 y en la sección 0.1.0 (no se tocaron porque tienen cambios de v0.2.0 sin confirmar).
 - [ ] Revisión jurídica.
