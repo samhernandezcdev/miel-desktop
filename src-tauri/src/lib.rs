@@ -8,6 +8,8 @@ pub mod mascot;
 mod settings;
 pub mod tray;
 mod window;
+#[cfg(windows)]
+pub mod windows_probe;
 
 use std::sync::Arc;
 

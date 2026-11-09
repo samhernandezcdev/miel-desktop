@@ -18,9 +18,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $settings = Join-Path $env:APPDATA 'lat.bkode.miel\settings.json'
 $bak = Join-Path $env:TEMP 'miel-settings-e0b-prod.bak'
-$hash0 = (Get-FileHash $settings -Algorithm SHA256).Hash
+# Si no hay settings.json (Miel no instalado o sin datos), se siembra uno mínimo y al final se ELIMINA (y su carpeta si la creamos).
+$existed = Test-Path $settings
+$hash0 = if ($existed) { (Get-FileHash $settings -Algorithm SHA256).Hash } else { 'AUSENTE' }
+$dirExisted = Test-Path (Split-Path $settings)
 if (Get-Process miel -ErrorAction SilentlyContinue) { throw 'Hay un miel.exe en ejecucion; cierralo (no se toca).' }
-Copy-Item $settings $bak -Force
+if ($existed) { Copy-Item $settings $bak -Force } else { New-Item -ItemType Directory -Force (Split-Path $settings) | Out-Null; '{"schema_version":1,"messages_enabled":true,"follow_enabled":true,"reduced_motion":false,"paused":false,"pet_size":96}' | Set-Content $bak -Encoding UTF8 }
 $logs = "$Out-logs"; New-Item -ItemType Directory -Force $logs | Out-Null
 $csv = "$Out-samples.csv"
 
@@ -72,9 +75,12 @@ try {
 }
 finally {
   Get-Process miel -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Dir*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-  Copy-Item $bak $settings -Force
+  if ($existed) { Copy-Item $bak $settings -Force } else {
+    Remove-Item $settings -Force -ErrorAction SilentlyContinue
+    if (-not $dirExisted) { Remove-Item (Split-Path $settings) -Recurse -Force -ErrorAction SilentlyContinue }
+  }
   Remove-Item Env:\MIEL_FAST, Env:\MIEL_DIAG_SCRIPT -ErrorAction SilentlyContinue
 }
-"settings identicos: $((Get-FileHash $settings -Algorithm SHA256).Hash -eq $hash0)"
+if ($existed) { "settings identicos: $((Get-FileHash $settings -Algorithm SHA256).Hash -eq $hash0)" } else { "settings ausentes como al inicio: $(-not (Test-Path $settings))" }
 Remove-Item $bak -Force
 "miel restantes: " + @(Get-Process miel -ErrorAction SilentlyContinue).Count

@@ -11,12 +11,14 @@
 //!   hilos ni temporizadores adicionales. El único plazo extra es el fin de la burbuja visible y,
 //!   tras un aviso de cambio de pantalla, un pequeño debounce.
 //!
-//! Todo acceso al sistema pasa por el trait `Host` → el motor se prueba sin ventana.
+//! Todo acceso al sistema pasa por el trait `Host` → el motor se prueba sin ventana. El tiempo pasa por
+//! el trait `Clock` (`SystemClock` en producción, `FakeClock` en pruebas).
 
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use super::clock::{Clock, SystemClock};
 use super::geometry::{
     anchor_of, clamp_anchor, ensure_center_visible, follow_target, fully_visible, nearest_area,
     rest_spot, window_origin, Frame, Rect, Vec2,
@@ -156,7 +158,11 @@ pub struct Engine {
 
 impl Engine {
     pub fn spawn<H: Host>(host: Arc<H>, cfg: EngineConfig) -> Engine {
-        let start = Instant::now();
+        Self::spawn_with_clock(host, cfg, Arc::new(SystemClock::new()))
+    }
+
+    /// Como `spawn`, con el reloj del motor inyectado (pruebas deterministas con `FakeClock`).
+    pub fn spawn_with_clock<H: Host>(host: Arc<H>, cfg: EngineConfig, clock: Arc<dyn Clock>) -> Engine {
         let mut rng = match cfg.seed {
             Some(s) => fastrand::Rng::with_seed(s),
             None => fastrand::Rng::new(),
@@ -180,7 +186,7 @@ impl Engine {
             cv: Condvar::new(),
             done: Condvar::new(),
         });
-        let worker = Worker::new(host, cfg, fsm, talker, rng, start);
+        let worker = Worker::new(host, cfg, fsm, talker, rng, clock);
         let sh = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("miel-engine".into())
@@ -276,18 +282,18 @@ struct Worker<H: Host> {
     fsm: Fsm,
     talker: Talker,
     rng: fastrand::Rng,
-    start: Instant,
+    clock: Arc<dyn Clock>,
     motion: Motion,
     mons: Vec<MonitorInfo>,
     areas: Vec<Rect>,
     win: Frame,
     last_set: (i32, i32),
-    last_refresh: Option<Instant>,
-    last_tick: Instant,
+    last_refresh: Option<Ms>,
+    last_tick: Ms,
     rest_target: Option<Vec2>,
     moving: bool,
     /// Instante en que se procesará un aviso de cambio de geometría (debounce).
-    geom_due: Option<Instant>,
+    geom_due: Option<Ms>,
     topology: Vec<(Rect, u64)>,
     last_emitted: View,
     native_events: bool,
@@ -300,24 +306,25 @@ impl<H: Host> Worker<H> {
         fsm: Fsm,
         talker: Talker,
         rng: fastrand::Rng,
-        start: Instant,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         let (fx, fy) = cfg.anchor_frac;
         let last_emitted = compose(&fsm, &talker);
+        let last_tick = clock.now_ms();
         Self {
             host,
             cfg,
             fsm,
             talker,
             rng,
-            start,
+            clock,
             motion: Motion::default(),
             mons: Vec::new(),
             areas: Vec::new(),
             win: Frame::with_anchor_frac(260.0, 200.0, fx, fy),
             last_set: (0, 0),
             last_refresh: None,
-            last_tick: Instant::now(),
+            last_tick,
             rest_target: None,
             moving: false,
             geom_due: None,
@@ -328,7 +335,7 @@ impl<H: Host> Worker<H> {
     }
 
     fn now(&self) -> Ms {
-        self.start.elapsed().as_millis() as Ms
+        self.clock.now_ms()
     }
 
     fn run(mut self, shared: &Shared) {
@@ -370,7 +377,7 @@ impl<H: Host> Worker<H> {
                     self.host.emit_view(&view);
                 }
             }
-            if self.geom_due.is_some_and(|d| Instant::now() >= d) {
+            if self.geom_due.is_some_and(|d| self.now() >= d) {
                 self.geom_due = None;
                 self.on_geometry_changed();
             }
@@ -380,11 +387,11 @@ impl<H: Host> Worker<H> {
 
     /// Cuánto puede dormir el hilo. `None` = indefinidamente (suspendido y sin avisos pendientes).
     fn wait_timeout(&self) -> Option<Duration> {
-        let by_geom = self.geom_due.map(|d| d.saturating_duration_since(Instant::now()));
+        let now = self.now();
+        let by_geom = self.geom_due.map(|d| Duration::from_millis(d.saturating_sub(now)));
         if self.fsm.is_suspended() {
             return by_geom; // pausado/oculto: solo un aviso de geometría pendiente puede despertarlo
         }
-        let now = self.now();
         let by_ms = [self.fsm.next_wakeup(), self.talker.next_wakeup()]
             .into_iter()
             .flatten()
@@ -429,7 +436,8 @@ impl<H: Host> Worker<H> {
             }
             Cmd::GeometryChanged => {
                 // ráfaga de avisos → una sola relectura tras el debounce
-                self.geom_due.get_or_insert(Instant::now() + self.cfg.geometry_debounce);
+                let due = self.now() + self.cfg.geometry_debounce.as_millis() as Ms;
+                self.geom_due.get_or_insert(due);
                 false
             }
         }
@@ -437,11 +445,10 @@ impl<H: Host> Worker<H> {
 
     /// Relee monitores y rectángulo de la ventana (re-sincroniza si algo la movió desde fuera).
     fn refresh(&mut self, force: bool) {
-        let due = self.last_refresh.is_none_or(|t| t.elapsed() >= self.cfg.refresh_every);
-        if !force && !due {
+        if !force && !self.refresh_due() {
             return;
         }
-        self.last_refresh = Some(Instant::now());
+        self.last_refresh = Some(self.now());
         let mons = self.host.monitors();
         if !mons.is_empty() {
             let topo: Vec<(Rect, u64)> = mons.iter().map(|m| (m.work, m.scale.to_bits())).collect();
@@ -460,6 +467,12 @@ impl<H: Host> Worker<H> {
                 self.last_set = (r.x, r.y);
             }
         }
+    }
+
+    /// ¿Ha pasado `refresh_every` desde la última relectura de monitores/ventana?
+    fn refresh_due(&self) -> bool {
+        let every = self.cfg.refresh_every.as_millis() as Ms;
+        self.last_refresh.is_none_or(|t| self.now().saturating_sub(t) >= every)
     }
 
     /// Reacción a un cambio real de pantalla: relee monitores/ventana y, si la posición dejó de
@@ -503,8 +516,9 @@ impl<H: Host> Worker<H> {
     }
 
     fn drive_motion(&mut self) {
-        let dt = self.last_tick.elapsed().as_secs_f64();
-        self.last_tick = Instant::now();
+        let now = self.now();
+        let dt = now.saturating_sub(self.last_tick) as f64 / 1000.0;
+        self.last_tick = now;
         if self.fsm.is_suspended() {
             self.motion.stop();
             self.moving = false;
@@ -514,9 +528,7 @@ impl<H: Host> Worker<H> {
         let active = self.moving || b == Behavior::Follow || b == Behavior::Rest;
         if active {
             self.refresh(false);
-        } else if !self.native_events
-            && self.last_refresh.is_none_or(|t| t.elapsed() >= self.cfg.refresh_every)
-        {
+        } else if !self.native_events && self.refresh_due() {
             // Respaldo SIN avisos nativos: al despertar (fin de Idle), ¿sigue la abeja visible?
             self.refresh(true);
             if !fully_visible(&self.areas, self.motion.pos, self.win) && !self.areas.is_empty() {
@@ -798,7 +810,7 @@ mod tests {
             let mut rng = fastrand::Rng::with_seed(1);
             let fsm = Fsm::new(cfg.timings, 0, &mut rng);
             let talker = Talker::new(cfg.talker, 0, &mut rng);
-            let mut w = Worker::new(Fake::new(), cfg, fsm, talker, rng, Instant::now());
+            let mut w = Worker::new(Fake::new(), cfg, fsm, talker, rng, Arc::new(SystemClock::new()));
             let work = Rect::new(0, 0, 3840, 2100);
             w.areas = vec![work];
             w.mons = vec![MonitorInfo { work, scale }];
@@ -1464,5 +1476,58 @@ mod tests {
             h.join().unwrap();
         }
         assert!(e.wait_stopped(Duration::from_secs(1)));
+    }
+
+    // ---- Reloj inyectado (E1a): el motor mide el tiempo con `Clock`, no con `Instant` ----
+
+    fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
+        for _ in 0..100 {
+            if cond() {
+                return true;
+            }
+            sleep(Duration::from_millis(20));
+        }
+        cond()
+    }
+
+    #[test]
+    fn frozen_fake_clock_keeps_the_fsm_waiting_even_as_real_time_passes() {
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), follow_cfg(), clock.clone());
+        sleep(Duration::from_millis(300)); // 15 veces el plazo de Idle (20 ms) en tiempo real
+        assert_eq!(e.view().behavior, Behavior::Idle, "con el reloj parado no vence ningún plazo");
+        assert_eq!(host.calls(), 0);
+        clock.advance(30); // ahora sí vence el plazo de Idle
+        assert!(wait_until(|| e.view().behavior == Behavior::Follow), "con el reloj avanzado, pasa a Follow");
+        e.shutdown();
+    }
+
+    #[test]
+    fn geometry_debounce_follows_the_injected_clock() {
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), quiet_cfg(), clock.clone());
+        sleep(Duration::from_millis(100));
+        e.send(Cmd::GeometryChanged);
+        sleep(Duration::from_millis(100));
+        let before = host.monitor_calls.load(Ordering::SeqCst);
+        sleep(Duration::from_millis(600)); // el doble del debounce (300 ms) en tiempo real
+        assert_eq!(host.monitor_calls.load(Ordering::SeqCst), before, "reloj parado: sigue pendiente");
+        clock.advance(300);
+        assert!(
+            wait_until(|| host.monitor_calls.load(Ordering::SeqCst) > before),
+            "al cumplirse el debounce según el reloj, relee los monitores"
+        );
+        e.shutdown();
+    }
+
+    #[test]
+    fn spawn_uses_the_system_clock() {
+        // `spawn` (producción) sigue funcionando por tiempo real: Idle de 20 ms → Follow.
+        let host = Fake::new();
+        let e = Engine::spawn(host.clone(), follow_cfg());
+        assert!(wait_until(|| e.view().behavior == Behavior::Follow));
+        e.shutdown();
     }
 }

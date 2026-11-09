@@ -339,3 +339,30 @@ Cambios: `tools/build_bee.py` (+ copia en `miel-bee-mascot/tools/`), `src/assets
 
 Fase 2 aprobada con **Rest/Sleep a 20 fps** e **Idle con aleteo estándar a 30 fps** (defecto fijo del generador: `DEFAULT_REST_FPS = 20`, `DEFAULT_IDLE_FPS = 30`, `--idle-flap standard`; las demás opciones se conservan). Se regeneró `bee.css` con `python -I tools/build_bee.py`: resultado idéntico al ya presente; copia de `miel-bee-mascot/` igual; `make_nostyle_rig.py --check` OK. SHA-256 de los 19 SVG (`bee-*.svg` de `src/assets/bee/` y `miel-bee-mascot/assets/bee/`) comparados con `HEAD`: **idénticos**. Cifras que respaldan la elección (165 Hz, un equipo): Idle 5,30 % [4,58–6,18], Rest 2,98 % [2,76–3,69], Paused y Hidden ≈ 0.
 
+
+## v0.2.0 · E1a: `Clock` y `SystemProbe` sin cambio de comportamiento (2026-11-09)
+
+Cambios: `mascot/clock.rs` (trait `Clock`, `SystemClock`, `FakeClock`), `mascot/probe.rs` (trait `SystemProbe`, aritmética pura `idle_ms_from_ticks`, `notif_from_raw`, `FakeProbe`), `windows_probe.rs` (`WindowsProbe`, **no se invoca desde producción**), `mascot/engine.rs` (el reloj se inyecta: `Engine::spawn` crea un `SystemClock` y `spawn_with_clock` admite otro; `Instant` → milisegundos del reloj en `last_refresh`, `last_tick`, `geom_due`), `Cargo.toml` (features de `windows`: `Win32_System_SystemInformation`, `Win32_UI_Input_KeyboardAndMouse`). `tools/privacy_policy.json` **sin cambios**: ya listaba esas features y las API usadas (`GetLastInputInfo`, `LASTINPUTINFO`, `GetTickCount`, `SHQueryUserNotificationState`). Sin crates nuevas, sin cambios de SVG/CSS ni de `Cargo.lock`.
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo test` | 173 + 5 (antes 156 + 5): +17 nuevas (3 de `clock`, 10 de `probe`, 1 de `windows_probe`, 3 del motor con `FakeClock`). Ninguna aserción previa se modificó; en un test se adaptó solo el constructor (`Worker::new` recibe un reloj). 5 ejecuciones seguidas sin fallos |
+| `vitest` / `tsc` / `check:dist` / `check_privacy.py` (+autotest) / clippy `-D warnings` | 69/69 / OK / OK / OK / sin avisos |
+| Aritmética de `idle_ms` | probada: `dwTime` cerca de `0xFFFFFFFF` con tick envuelto, tick menor que `dwTime` (→ 0), límite exacto 2^31, fallo de la llamada (→ `Err`), saltos grandes (24 días), tope de 30 días |
+
+Notas: (1) con contadores de 32 bits el delta válido nunca pasa de 2^31 ms (≈ 24,9 días), así que el tope de 30 días no puede alcanzarse con `u32`; se conserva como defensa y se prueba con entradas de 64 bits. (2) Cambio mínimo de resolución: el `dt` del movimiento pasa de precisión de nanosegundos a milisegundos (el reloj del motor es en ms); `Motion::step` ya limitaba y protegía `dt` pequeño. (3) Las esperas reales de la `Condvar` siguen siendo de tiempo de pared; con `FakeClock` el hilo se despierta por tiempo real pero decide con el reloj inyectado.
+
+### Medición de no regresión (binario de producción con `custom-protocol` + `diag`, 165 Hz, mismo método que E0b)
+
+`base` = `HEAD` (commit de E0c) compilado igual; `e1a` = árbol con E1a. Medias por repetición, mediana entre repeticiones y [rango]; 4 repeticiones intercaladas (`tools/e0b/prodrun.ps1`, `analyze_prod.py`). Datos: `docs/measurements/v020-e1a-prod-*`.
+
+| Estado | `base` | `e1a` | Calibración A/A (`base` frente a copia idéntica `base2`) |
+|---|---|---|---|
+| Idle | 6,57 [5,72–7,12] | 7,06 [6,04–7,24] | 5,43 [5,05–6,07] frente a 5,98 [5,19–6,62] |
+| Rest | 3,91 [3,09–4,65] | 4,28 [3,80–4,68] | 3,37 [2,95–3,60] frente a 3,03 [2,86–3,25] |
+| Paused | 0,00 | 0,00 | 0,00 frente a 0,04 |
+| Hidden | 0,00 | 0,00 | 0,04 frente a 0,04 |
+
+Lectura: `e1a` sale +7 % (Idle) y +9 % (Rest) sobre `base` con el mismo signo en las 4 repeticiones, pero la calibración A/A con binarios **idénticos** da diferencias de −9 % a +10 % de signo opuesto: **la resolución de este método es ≈ ±10 %**, y la diferencia queda dentro de ella. Conclusión: no se detecta empeoramiento; no se puede afirmar una igualdad más fina. Los niveles absolutos varían entre sesiones (Idle de `base`: 6,57 en la tanda `e1a` frente a 5,43 en la A/A y 5,30 en E0b; la reacción, que E1a no toca, también subió ≈ 25 % en la tanda `e1a`): comparar solo dentro de una misma tanda. Paused y Hidden siguen en el suelo.
+
+Incidencias: (a) una primera tanda se **descartó** (guardada como `v020-e1a-run1-descartada-*`): el equipo se suspendió durante la noche a mitad de la medición y una repetición `base` se cortó a los 20 s; (b) `tools/e0b/prodrun.ps1` se amplió para sembrar un `settings.json` temporal si no existe (Miel estaba desinstalada) y eliminarlo al terminar; al final, `settings.json` quedó ausente como al empezar; (c) el intento de evitar la suspensión con `SetThreadExecutionState` falló en la tanda `e1a` por un error de conversión de tipo (esa tanda terminó sin suspensiones de todos modos) y funcionó en la A/A; (d) los binarios de medición incluyen `diag` y se compilaron en un directorio temporal, ya eliminado. Sleep (`sleepy`) sigue sin figura propia (1–5 muestras por variante).
