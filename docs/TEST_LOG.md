@@ -324,3 +324,18 @@ Alcance: `docs/PRIVACY.md`, `tools/check_privacy.py` (+ `tools/privacy_policy.js
 - Las conexiones del runtime no son una violación de la política (que prohíbe red **en el código de Miel**), pero sí significan que **"Miel no genera tráfico de red" no puede afirmarse para el proceso en su conjunto**: la documentación solo afirma que Miel no añade conexiones por su cuenta.
 - **Pendiente:** repetir tras instalar el instalador definitivo y con una sesión más larga si se quiere acotar el comportamiento del runtime.
 
+## v0.2.0 · E0b Fase 2: capa de rendimiento de la animación (2026-11-08)
+
+Cambios: `tools/build_bee.py` (+ copia en `miel-bee-mascot/tools/`), `src/assets/bee/bee.css` (capa añadida; también en `miel-bee-mascot/assets/bee/`), `tools/make_nostyle_rig.py`, `tools/check_dist.mjs`, pruebas (`Bee.test.tsx`, `src/test/checkDist.test.ts`), `tools/anim_compare/`, `tools/e0b/`, `docs/ANIMATION_PERFORMANCE.md`; los GIF de `docs/img/anim-compare/` no se versionan (carpeta ignorada; se regeneran con `tools/anim_compare/`). **Sin cambios de código de la aplicación ni de SVG.**
+
+| Comprobación | Resultado |
+|---|---|
+| SHA-256 de los 18 SVG (`src/assets/bee/bee-*.svg` y `miel-bee-mascot/assets/bee/bee-*.svg`) antes/después | **Idénticos** (incluido `bee-rig.nostyle.svg`); regenerar con `python -I tools/build_bee.py` produce los SVG byte a byte iguales |
+| `vitest` | 69/69 (antes 57: +4 de la capa en `Bee.test.tsx`, +8 en `checkDist.test.ts`; la prueba «bee.css es exactamente el `<style>`» se reformuló, no se eliminó) |
+| `check:dist` | OK; falla (probado) si falta cualquiera de las reglas de la capa |
+| Mediciones antes/después (binario de producción, 5 repeticiones intercaladas) | Ver `plan/v0.2.0-baseline.md` §8: Idle −51 %, Rest −70 % (20 fps) / −75 % (10 fps); Paused y Hidden ≈ 0 |
+
+### Aprobación y valores fijados (2026-11-08)
+
+Fase 2 aprobada con **Rest/Sleep a 20 fps** e **Idle con aleteo estándar a 30 fps** (defecto fijo del generador: `DEFAULT_REST_FPS = 20`, `DEFAULT_IDLE_FPS = 30`, `--idle-flap standard`; las demás opciones se conservan). Se regeneró `bee.css` con `python -I tools/build_bee.py`: resultado idéntico al ya presente; copia de `miel-bee-mascot/` igual; `make_nostyle_rig.py --check` OK. SHA-256 de los 19 SVG (`bee-*.svg` de `src/assets/bee/` y `miel-bee-mascot/assets/bee/`) comparados con `HEAD`: **idénticos**. Cifras que respaldan la elección (165 Hz, un equipo): Idle 5,30 % [4,58–6,18], Rest 2,98 % [2,76–3,69], Paused y Hidden ≈ 0.
+

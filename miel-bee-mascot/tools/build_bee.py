@@ -5,10 +5,10 @@ Miel — generador de la mascota (abeja 2D original).
 Fuente única de verdad del personaje: de aquí salen
   - assets/bee/bee-<estado>.svg   (8 estados, estáticos, sin dependencias)
   - assets/bee/bee-rig.svg        (maestro con los 8 rostros + CSS embebido)
-  - assets/bee/bee.css            (animaciones y tabla de estados)
+  - assets/bee/bee.css            (tabla de estados y animaciones + capa de rendimiento)
   - assets/bee/palette.json
 
-Uso:  python3 tools/build_bee.py
+Uso:  python3 tools/build_bee.py [--rest-fps 10|20] [--idle-fps 30] [--idle-flap standard|lowamp|burst] [--out DIR] [--css-only]
 Sólo usa la biblioteca estándar.
 """
 from __future__ import annotations
@@ -413,7 +413,8 @@ def build_rig_svg(css: str, p: str = "") -> str:
 
 
 # ───────────────────────────── CSS ─────────────────────────────
-def build_css() -> str:
+def build_base_css() -> str:
+    """CSS base (tabla de estados y animaciones continuas): es el <style> embebido en bee-rig.svg."""
     ox, oy = POSE_ORIGIN
     states_css = []
     for s, st in STATES.items():
@@ -475,17 +476,139 @@ def build_css() -> str:
 """
 
 
+# ───────────────────── Capa de rendimiento (v0.2.0 · E0b) ─────────────────────
+# Qué resuelve: el costo de CPU en reposo lo marca la TASA DE FOTOGRAMAS que Chromium compone (un fotograma por
+# refresco de pantalla mientras ALGUNA animación cambie un valor), no cuántas animaciones haya. Reglas (ver
+# docs/ANIMATION_PERFORMANCE.md):
+#   1. Los rostros inactivos (opacity:0) no animan: sus parpadeos y las "zzz" seguían produciendo fotogramas.
+#   2. En idle, resting y sleepy el movimiento visible se cuantiza con steps() ALINEADOS a un reloj común
+#      (todos los pasos caen en la misma rejilla de 1/fps s): idle a IDLE_FPS, resting/sleepy a REST_FPS.
+#      Para que los pasos coincidan se ajusta la duración de las capas al múltiplo más cercano de 1/fps.
+#   3. Lo que no se ve no se anima: en resting la flotación y el aleteo tienen amplitud 0.
+# Se AÑADE a la tabla base sin tocarla: el rig standalone (bee-rig.svg) conserva exactamente su CSS embebido.
+DEFAULT_REST_FPS = 20
+DEFAULT_IDLE_FPS = 30
+VALID_FPS = (10, 20, 30)  # con estos valores 2.7 s, 4.6 s, 5.3 s, 1.6 s, 1.7 s y 0.9 s son múltiplos exactos del paso
+IDLE_FLAPS = ("standard", "lowamp", "burst")
+LOWAMP_DEG = 4.5
+
+
+def _g(v: float) -> str:
+    return f"{v:.7g}"
+
+
+def _motion_rules(state: str, fps: int, flap: str = "standard") -> list[str]:
+    st = STATES[state]
+    u = 1.0 / fps
+    sel = f'.bee[data-state="{state}"]'
+    props: list[str] = []
+    rules: list[str] = []
+    steps = "animation-timing-function:steps({n},end)"
+    # flotación (intervalo = fd/2 entre keyframes)
+    if st["fl"] == 0:
+        rules.append(f"{sel} .float{{animation:none}}")
+    else:
+        n = max(1, round(st["fd"] / 2 / u))
+        if abs(2 * n * u - st["fd"]) > 1e-6:
+            props.append(f"--float-dur:{_g(2 * n * u)}s")
+        rules.append(f"{sel} .float{{{steps.format(n=n)}}}")
+    # balanceo (5.4 s) y antenas (4.6 s y 5.3 s): múltiplos exactos del paso para los fps válidos
+    for cls, sec in ((".sway", 2.7), (".antenna-l .wiggle", 4.6), (".antenna-r .wiggle", 5.3)):
+        n = round(sec / u)
+        assert abs(n * u - sec) < 1e-6, (cls, sec, fps)
+        rules.append(f"{sel} {cls}{{{steps.format(n=n)}}}")
+    # aleteo
+    if st["amp"] == 0:
+        rules.append(f"{sel} .flap{{animation:none}}")
+    else:
+        n = max(1, round(st["dur"] / u))
+        if abs(n * u - st["dur"]) > 1e-6:
+            props.append(f"--wing-dur:{_g(n * u)}s")
+        if state == "idle" and flap == "lowamp":
+            props.append(f"--wing-amp:{_g(LOWAMP_DEG)}deg")
+        if state == "idle" and flap == "burst":
+            # ráfaga: 4 barridos y una pausa de 2 barridos con la posición mantenida (6 unidades de --wing-dur)
+            rules.append(f"{sel} .wing-l .flap{{animation:bee-flap-burst-l calc(var(--wing-dur) * 6) infinite}}")
+            rules.append(f"{sel} .wing-r .flap{{animation:bee-flap-burst-r calc(var(--wing-dur) * 6) infinite}}")
+        else:
+            rules.append(f"{sel} .flap{{{steps.format(n=n)}}}")
+    # "zzz" (solo se ven en sleepy): intervalo 1.6 s
+    if state == "sleepy":
+        n = round(1.6 / u)
+        assert abs(n * u - 1.6) < 1e-6
+        rules.append(f"{sel} .zzz .z-1,\n{sel} .zzz .z-2{{{steps.format(n=n)}}}")
+    head = [f"{sel}{{{';'.join(props)}}}"] if props else []
+    return head + rules
+
+
+def _burst_keyframes(n_steps: int) -> str:
+    t = f"animation-timing-function:steps({n_steps},end)"
+    out = []
+    for side, (a, b) in (("l", ("calc(var(--wing-amp) * -1)", "var(--wing-amp)")), ("r", ("var(--wing-amp)", "calc(var(--wing-amp) * -1)"))):
+        out.append(
+            f"@keyframes bee-flap-burst-{side}{{"
+            f"0%{{transform:rotate({a});{t}}}"
+            f"16.667%{{transform:rotate({b});{t}}}"
+            f"33.333%{{transform:rotate({a});{t}}}"
+            f"50%{{transform:rotate({b});{t}}}"
+            f"66.667%{{transform:rotate({a});animation-timing-function:steps(1,end)}}"
+            f"100%{{transform:rotate({a})}}}}"
+        )
+    return "\n".join(out)
+
+
+def build_perf_css(rest_fps: int = DEFAULT_REST_FPS, idle_fps: int = DEFAULT_IDLE_FPS, idle_flap: str = "standard") -> str:
+    assert rest_fps in VALID_FPS and idle_fps in VALID_FPS and idle_flap in IDLE_FLAPS
+    hidden = []
+    for s in STATES:
+        for tgt in (".eyes", ".zzz .z-1", ".zzz .z-2"):
+            hidden.append(f'.bee[data-state="{s}"] .face:not(.face-{s}) {tgt}')
+    parts = [
+        f"/* ── Capa de rendimiento (generada; reglas en docs/ANIMATION_PERFORMANCE.md): rest/sleep {rest_fps} fps, idle {idle_fps} fps, aleteo {idle_flap} ── */",
+        "/* 1) Rostros inactivos (opacity:0) sin animación */",
+        ",\n".join(hidden) + "{animation:none}",
+        f"/* 2) Movimiento visible con steps() alineados a 1/fps s */",
+    ]
+    parts += _motion_rules("idle", idle_fps, idle_flap)
+    parts += _motion_rules("resting", rest_fps)
+    parts += _motion_rules("sleepy", rest_fps)
+    if idle_flap == "burst":
+        parts.append(_burst_keyframes(round(STATES["idle"]["dur"] / (1.0 / idle_fps))))
+    return "\n".join(parts) + "\n"
+
+
+def build_css(rest_fps: int = DEFAULT_REST_FPS, idle_fps: int = DEFAULT_IDLE_FPS, idle_flap: str = "standard") -> str:
+    """bee.css = tabla base (idéntica al <style> del rig standalone) + capa de rendimiento."""
+    return build_base_css() + "\n" + build_perf_css(rest_fps, idle_fps, idle_flap)
+
+
 # ───────────────────────────── Salida ─────────────────────────────
 def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    css = build_css()
-    for s in STATES:
-        (OUT / f"bee-{s}.svg").write_text(build_state_svg(s), encoding="utf-8")
-    (OUT / "bee-rig.svg").write_text(build_rig_svg(css), encoding="utf-8")
-    (OUT / "bee.css").write_text(css, encoding="utf-8")
-    (OUT / "palette.json").write_text(json.dumps(PALETTE, indent=2) + "\n", encoding="utf-8")
-    print("OK ->", OUT)
-    for f in sorted(OUT.iterdir()):
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Genera la mascota. Opciones de la capa de rendimiento (bee.css).")
+    ap.add_argument("--rest-fps", type=int, choices=VALID_FPS, default=DEFAULT_REST_FPS, help="fps de resting/sleepy (10 o 20 recomendados)")
+    ap.add_argument("--idle-fps", type=int, choices=VALID_FPS, default=DEFAULT_IDLE_FPS)
+    ap.add_argument("--idle-flap", choices=IDLE_FLAPS, default="standard", help="aleteo en idle: estándar, menor amplitud o ráfagas con pausas")
+    ap.add_argument("--out", type=Path, default=OUT, help="carpeta de salida (por defecto la del proyecto)")
+    ap.add_argument("--css-only", action="store_true", help="escribe solo bee.css (para comparar variantes sin tocar el resto)")
+    a = ap.parse_args()
+    out = a.out
+    out.mkdir(parents=True, exist_ok=True)
+    css = build_css(a.rest_fps, a.idle_fps, a.idle_flap)
+
+    def write(name: str, text: str) -> None:
+        # newline="\n": mismos bytes en cualquier sistema (los SVG del repositorio están en LF)
+        (out / name).write_text(text, encoding="utf-8", newline="\n")
+
+    if not a.css_only:
+        for s in STATES:
+            write(f"bee-{s}.svg", build_state_svg(s))
+        write("bee-rig.svg", build_rig_svg(build_base_css()))  # el rig standalone conserva su CSS embebido original
+        write("palette.json", json.dumps(PALETTE, indent=2) + "\n")
+    write("bee.css", css)
+    print("OK ->", out)
+    for f in sorted(out.iterdir()):
         print(f"  {f.name:20s} {f.stat().st_size:6d} B")
 
 

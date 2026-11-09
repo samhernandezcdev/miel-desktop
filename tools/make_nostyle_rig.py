@@ -14,7 +14,8 @@ por completo el <style> vacío resultante. Los archivos originales (bee-rig.svg,
 palette.json) NO se modifican. El script comprueba:
   1. el resultado no contiene ningún <style>;
   2. original bee-rig.svg sin su <style> == resultado (la única diferencia es el <style>);
-  3. bee.css == build_bee.build_css() (el CSS externo es exactamente el que traía el rig).
+  3. bee.css == build_bee.build_css(): la tabla BASE (idéntica al <style> del rig standalone, que no cambia)
+     más la capa de rendimiento de E0b (steps() alineados y sin animar rostros ocultos).
 
 Uso:  python -I tools/make_nostyle_rig.py            (genera y verifica)
       python -I tools/make_nostyle_rig.py --check    (solo verifica que el archivo está al día)
@@ -52,11 +53,14 @@ def verify(nostyle: str) -> None:
         raise SystemExit("ERROR: el rig sin estilo difiere del original en algo más que el <style>")
     css_original = norm((BEE / "bee.css").read_text(encoding="utf-8"))
     if css_original.strip() != build_bee.build_css().strip():
-        raise SystemExit("ERROR: bee.css no coincide con build_bee.build_css()")
-    # y el <style> que se quitó del original es exactamente bee.css
+        raise SystemExit("ERROR: bee.css no coincide con build_bee.build_css() (regenerar con python -I tools/build_bee.py)")
+    # el <style> que se quitó del original es exactamente la tabla BASE; bee.css = base + capa de rendimiento
+    base = build_bee.build_base_css().strip()
     m = re.search(r"<style>\n(.*?)\n</style>", original, flags=re.S)
-    if not m or m.group(1).strip() != css_original.strip():
-        raise SystemExit("ERROR: el <style> del rig original no coincide con bee.css")
+    if not m or m.group(1).strip() != base:
+        raise SystemExit("ERROR: el <style> del rig original no coincide con build_bee.build_base_css()")
+    if not css_original.strip().startswith(base):
+        raise SystemExit("ERROR: bee.css no empieza por la tabla base (el rig standalone y bee.css divergen)")
 
 
 def main() -> None:

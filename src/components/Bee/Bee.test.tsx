@@ -66,12 +66,47 @@ describe("bee.css (el CSS externo que sustituye al <style> embebido)", () => {
   });
 });
 
+describe("bee.css: capa de rendimiento (docs/ANIMATION_PERFORMANCE.md)", () => {
+  const css = asset("bee.css");
+  const perf = css.slice(css.indexOf("Capa de rendimiento"));
+
+  it("los rostros inactivos no animan (los 8 estados)", () => {
+    for (const s of BEE_STATES) {
+      expect(perf).toContain(`.bee[data-state="${s}"] .face:not(.face-${s}) .eyes`);
+      expect(perf).toContain(`.bee[data-state="${s}"] .face:not(.face-${s}) .zzz .z-1`);
+    }
+    expect(perf).toMatch(/\.z-2\{animation:none\}/);
+  });
+
+  it("resting solo anima balanceo y antenas, con steps(); flotación y aleteo (amplitud 0) no se animan", () => {
+    expect(perf).toContain('.bee[data-state="resting"] .float{animation:none}');
+    expect(perf).toContain('.bee[data-state="resting"] .flap{animation:none}');
+    expect(perf).toMatch(/\.bee\[data-state="resting"\] \.sway\{animation-timing-function:steps\(\d+,end\)\}/);
+    expect(perf).toMatch(/\.bee\[data-state="resting"\] \.antenna-l \.wiggle\{animation-timing-function:steps\(\d+,end\)\}/);
+  });
+
+  it("idle y sleepy cuantizan su movimiento con steps(), y sleepy conserva sus zzz visibles", () => {
+    expect(perf).toMatch(/\.bee\[data-state="idle"\] \.flap\{animation-timing-function:steps\(\d+,end\)\}/);
+    expect(perf).toMatch(/\.bee\[data-state="sleepy"\] \.zzz \.z-2\{animation-timing-function:steps\(\d+,end\)\}/);
+    expect(perf).not.toMatch(/\.bee\[data-state="sleepy"\] \.flap\{animation:none\}/); // el aleteo de sleepy sí se ve
+  });
+
+  it("la capa no toca Paused/Hidden ni movimiento reducido (siguen en la tabla base y en app.css)", () => {
+    expect(perf).not.toContain("animation-play-state");
+    expect(perf).not.toContain("prefers-reduced-motion");
+    expect(perf).not.toContain("!important");
+  });
+});
+
 describe("derivación del rig sin estilo (tools/make_nostyle_rig.py)", () => {
-  it("bee.css es exactamente el <style> que traía el rig original (nada se perdió ni se cambió)", () => {
+  it("bee.css empieza exactamente por el <style> que traía el rig original (nada se perdió ni se cambió) y añade la capa de rendimiento", () => {
     const original = asset("bee-rig.svg");
     const m = /<style>\n([\s\S]*?)\n<\/style>/.exec(original);
     expect(m).not.toBeNull();
-    expect(m![1]!.trim()).toBe(asset("bee.css").trim());
+    const base = m![1]!.trim();
+    const css = asset("bee.css").trim();
+    expect(css.startsWith(base)).toBe(true);
+    expect(css.slice(base.length)).toContain("Capa de rendimiento");
   });
 
   it("la ÚNICA diferencia entre bee-rig.svg y bee-rig.nostyle.svg es la ausencia del <style>", () => {

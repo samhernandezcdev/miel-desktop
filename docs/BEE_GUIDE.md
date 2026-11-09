@@ -79,6 +79,8 @@ Todas las variables por estado (`--wing-amp`, `--float-amp`, `--rot`…) están 
 
 **Accesibilidad**: con `prefers-reduced-motion: reduce` se eliminan todas las animaciones y transiciones; la abeja sigue cambiando de estado pero de forma estática. En Windows, el ajuste "Mostrar animaciones" se refleja en esta media query dentro de Chromium/Electron.
 
+> **Rendimiento:** antes de añadir o cambiar animaciones lee [`ANIMATION_PERFORMANCE.md`](ANIMATION_PERFORMANCE.md): el costo en reposo son los fotogramas compuestos por refresco, no el número de animaciones. `bee.css` incluye una capa de rendimiento generada (`steps()` alineados, rostros ocultos sin animar) que se añade a la tabla base; `bee-rig.svg` conserva su CSS embebido original.
+
 ## 6. Archivos
 
 ```

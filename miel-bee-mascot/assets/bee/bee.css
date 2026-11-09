@@ -60,3 +60,49 @@
   .bee,.bee *{animation:none!important;transition:none!important}
   .bee[data-state="talking"] .mouth-b{opacity:0}
 }
+
+/* ── Capa de rendimiento (generada; reglas en docs/ANIMATION_PERFORMANCE.md): rest/sleep 20 fps, idle 30 fps, aleteo standard ── */
+/* 1) Rostros inactivos (opacity:0) sin animación */
+.bee[data-state="idle"] .face:not(.face-idle) .eyes,
+.bee[data-state="idle"] .face:not(.face-idle) .zzz .z-1,
+.bee[data-state="idle"] .face:not(.face-idle) .zzz .z-2,
+.bee[data-state="happy"] .face:not(.face-happy) .eyes,
+.bee[data-state="happy"] .face:not(.face-happy) .zzz .z-1,
+.bee[data-state="happy"] .face:not(.face-happy) .zzz .z-2,
+.bee[data-state="curious"] .face:not(.face-curious) .eyes,
+.bee[data-state="curious"] .face:not(.face-curious) .zzz .z-1,
+.bee[data-state="curious"] .face:not(.face-curious) .zzz .z-2,
+.bee[data-state="thinking"] .face:not(.face-thinking) .eyes,
+.bee[data-state="thinking"] .face:not(.face-thinking) .zzz .z-1,
+.bee[data-state="thinking"] .face:not(.face-thinking) .zzz .z-2,
+.bee[data-state="sleepy"] .face:not(.face-sleepy) .eyes,
+.bee[data-state="sleepy"] .face:not(.face-sleepy) .zzz .z-1,
+.bee[data-state="sleepy"] .face:not(.face-sleepy) .zzz .z-2,
+.bee[data-state="surprised"] .face:not(.face-surprised) .eyes,
+.bee[data-state="surprised"] .face:not(.face-surprised) .zzz .z-1,
+.bee[data-state="surprised"] .face:not(.face-surprised) .zzz .z-2,
+.bee[data-state="talking"] .face:not(.face-talking) .eyes,
+.bee[data-state="talking"] .face:not(.face-talking) .zzz .z-1,
+.bee[data-state="talking"] .face:not(.face-talking) .zzz .z-2,
+.bee[data-state="resting"] .face:not(.face-resting) .eyes,
+.bee[data-state="resting"] .face:not(.face-resting) .zzz .z-1,
+.bee[data-state="resting"] .face:not(.face-resting) .zzz .z-2{animation:none}
+/* 2) Movimiento visible con steps() alineados a 1/fps s */
+.bee[data-state="idle"]{--wing-dur:0.3333333s}
+.bee[data-state="idle"] .float{animation-timing-function:steps(57,end)}
+.bee[data-state="idle"] .sway{animation-timing-function:steps(81,end)}
+.bee[data-state="idle"] .antenna-l .wiggle{animation-timing-function:steps(138,end)}
+.bee[data-state="idle"] .antenna-r .wiggle{animation-timing-function:steps(159,end)}
+.bee[data-state="idle"] .flap{animation-timing-function:steps(10,end)}
+.bee[data-state="resting"] .float{animation:none}
+.bee[data-state="resting"] .sway{animation-timing-function:steps(54,end)}
+.bee[data-state="resting"] .antenna-l .wiggle{animation-timing-function:steps(92,end)}
+.bee[data-state="resting"] .antenna-r .wiggle{animation-timing-function:steps(106,end)}
+.bee[data-state="resting"] .flap{animation:none}
+.bee[data-state="sleepy"] .float{animation-timing-function:steps(55,end)}
+.bee[data-state="sleepy"] .sway{animation-timing-function:steps(54,end)}
+.bee[data-state="sleepy"] .antenna-l .wiggle{animation-timing-function:steps(92,end)}
+.bee[data-state="sleepy"] .antenna-r .wiggle{animation-timing-function:steps(106,end)}
+.bee[data-state="sleepy"] .flap{animation-timing-function:steps(14,end)}
+.bee[data-state="sleepy"] .zzz .z-1,
+.bee[data-state="sleepy"] .zzz .z-2{animation-timing-function:steps(32,end)}
