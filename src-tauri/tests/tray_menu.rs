@@ -4,7 +4,7 @@
 
 use miel_lib::mascot::state::{Behavior, Expression, View};
 use miel_lib::tray::{
-    id, make_menu, MenuSync, TrayItems, LABEL_FOLLOW, LABEL_HIDE, LABEL_SHOW,
+    id, make_menu, MenuSync, TrayItems, LABEL_FOLLOW, LABEL_HIDE, LABEL_SETTINGS, LABEL_SHOW,
 };
 use tauri::test::{mock_app, MockRuntime};
 
@@ -43,11 +43,13 @@ fn real_menu_items_have_the_expected_labels_and_initial_state() {
     assert_eq!(items.pause.text().unwrap(), "Pausar");
     assert_eq!((items.show.is_enabled().unwrap(), items.hide.is_enabled().unwrap()), (false, true));
     assert!(items.follow.is_checked().unwrap());
-    // 5 acciones + 2 separadores, en el orden pedido
+    // 6 acciones + 3 separadores, en el orden pedido (E3: «Ajustes…» entre Pausar y Cerrar)
+    assert_eq!(items.settings.text().unwrap(), LABEL_SETTINGS);
+    assert!(items.settings.is_enabled().unwrap());
     let ids: Vec<String> = menu.items().unwrap().iter().map(|i| i.id().0.clone()).collect();
-    assert_eq!(ids.len(), 7);
+    assert_eq!(ids.len(), 9);
     let actions: Vec<&str> = ids.iter().map(String::as_str).filter(|i| i.starts_with("miel.")).collect();
-    assert_eq!(actions, [id::SHOW, id::HIDE, id::FOLLOW, id::PAUSE, id::QUIT]);
+    assert_eq!(actions, [id::SHOW, id::HIDE, id::FOLLOW, id::PAUSE, id::SETTINGS, id::QUIT]);
 }
 
 #[test]

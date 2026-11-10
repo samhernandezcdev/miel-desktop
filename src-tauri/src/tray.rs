@@ -27,6 +27,7 @@ pub mod id {
     pub const HIDE: &str = "miel.hide";
     pub const FOLLOW: &str = "miel.follow";
     pub const PAUSE: &str = "miel.pause";
+    pub const SETTINGS: &str = "miel.settings";
     pub const QUIT: &str = "miel.quit";
 }
 
@@ -36,6 +37,8 @@ pub enum TrayAction {
     Hide,
     ToggleFollow,
     TogglePause,
+    /// «Ajustes…» (E3): abre la ventana de ajustes o la enfoca si ya existe.
+    OpenSettings,
     Quit,
 }
 
@@ -46,6 +49,7 @@ impl TrayAction {
             id::HIDE => Self::Hide,
             id::FOLLOW => Self::ToggleFollow,
             id::PAUSE => Self::TogglePause,
+            id::SETTINGS => Self::OpenSettings,
             id::QUIT => Self::Quit,
             _ => return None,
         })
@@ -59,6 +63,10 @@ pub struct MenuModel {
     pub hide_enabled: bool,
     pub follow_checked: bool,
     pub pause_text: &'static str,
+    /// «Ajustes…» (E3). Hoy siempre disponible: abrir la ventana no depende del estado de Miel (ni
+    /// oculta ni pausada ni suprimida), pero vive en el modelo para que el menú siga siendo una función
+    /// pura de la vista.
+    pub settings_enabled: bool,
 }
 
 pub fn menu_model(v: &View) -> MenuModel {
@@ -67,6 +75,7 @@ pub fn menu_model(v: &View) -> MenuModel {
         hide_enabled: !v.hidden,
         follow_checked: v.follow_enabled,
         pause_text: if v.paused { "Reanudar" } else { "Pausar" },
+        settings_enabled: true,
     }
 }
 
@@ -93,6 +102,7 @@ pub trait MenuSink {
     fn set_hide_enabled(&self, enabled: bool);
     fn set_follow_checked(&self, checked: bool);
     fn set_pause_text(&self, text: &str);
+    fn set_settings_enabled(&self, enabled: bool);
 }
 
 /// `sync_tray_menu`: aplica el modelo al menú SOLO en lo que cambió desde la última vez
@@ -138,6 +148,9 @@ impl<S: MenuSink> MenuSync<S> {
         if old.is_none_or(|o| o.pause_text != new.pause_text) {
             self.sink.set_pause_text(new.pause_text);
         }
+        if old.is_none_or(|o| o.settings_enabled != new.settings_enabled) {
+            self.sink.set_settings_enabled(new.settings_enabled);
+        }
         true
     }
 
@@ -151,6 +164,7 @@ impl<S: MenuSink> MenuSync<S> {
 /// Acciones que el controlador puede pedir al resto de la aplicación.
 pub trait Control {
     fn send(&self, cmd: Cmd);
+    fn open_settings(&self);
     fn quit(&self);
 }
 
@@ -162,6 +176,7 @@ pub fn dispatch(action: TrayAction, ctl: &dyn Control) {
         TrayAction::Hide => ctl.send(Cmd::Hidden(true)),
         TrayAction::ToggleFollow => ctl.send(Cmd::ToggleFollow),
         TrayAction::TogglePause => ctl.send(Cmd::TogglePause),
+        TrayAction::OpenSettings => ctl.open_settings(),
         TrayAction::Quit => ctl.quit(),
     }
 }
@@ -174,6 +189,7 @@ pub struct TrayItems<R: Runtime> {
     pub hide: MenuItem<R>,
     pub follow: CheckMenuItem<R>,
     pub pause: MenuItem<R>,
+    pub settings: MenuItem<R>,
     /// El icono se conserva mientras viva el menú (no se recrea al cambiar de estado).
     tray: Mutex<Option<TrayIcon<R>>>,
 }
@@ -197,6 +213,9 @@ impl<R: Runtime> MenuSink for TrayItems<R> {
     fn set_pause_text(&self, text: &str) {
         log_err("Pausar/Reanudar", self.pause.set_text(text));
     }
+    fn set_settings_enabled(&self, enabled: bool) {
+        log_err("Ajustes", self.settings.set_enabled(enabled));
+    }
 }
 
 /// Estado gestionado por Tauri: el sincronizador del menú real.
@@ -211,6 +230,9 @@ impl Control for AppControl {
             Some(engine) => engine.send(cmd),
             None => eprintln!("[miel] bandeja: motor no disponible para {cmd:?}"),
         }
+    }
+    fn open_settings(&self) {
+        crate::settings_window::open_in_background(&self.0);
     }
     fn quit(&self) {
         lifecycle::quit(&self.0);
@@ -252,6 +274,7 @@ pub fn build(app: &AppHandle, initial: &View) -> Result<(), Box<dyn std::error::
 pub const LABEL_SHOW: &str = "Mostrar Miel";
 pub const LABEL_HIDE: &str = "Ocultar Miel";
 pub const LABEL_FOLLOW: &str = "Seguir cursor";
+pub const LABEL_SETTINGS: &str = "Ajustes…";
 pub const LABEL_QUIT: &str = "Cerrar Miel";
 
 /// Crea los elementos del menú con el modelo inicial. Genérica sobre el runtime: en producción
@@ -266,11 +289,13 @@ pub fn make_menu<R: Runtime>(
     let follow =
         CheckMenuItem::with_id(app, id::FOLLOW, LABEL_FOLLOW, true, m.follow_checked, None::<&str>)?;
     let pause = MenuItem::with_id(app, id::PAUSE, m.pause_text, true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, id::SETTINGS, LABEL_SETTINGS, m.settings_enabled, None::<&str>)?;
     let quit = MenuItem::with_id(app, id::QUIT, LABEL_QUIT, true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &hide, &sep1, &follow, &pause, &sep2, &quit])?;
-    Ok((menu, TrayItems { show, hide, follow, pause, tray: Mutex::new(None) }))
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&show, &hide, &sep1, &follow, &pause, &sep2, &settings, &sep3, &quit])?;
+    Ok((menu, TrayItems { show, hide, follow, pause, settings, tray: Mutex::new(None) }))
 }
 
 /// Actualiza el menú desde el hilo principal. Se invoca vía `run_on_main_thread`.
@@ -307,6 +332,7 @@ mod tests {
         hide: RefCell<bool>,
         follow: RefCell<bool>,
         pause: RefCell<String>,
+        settings: RefCell<bool>,
     }
     impl MenuSink for &FakeSink {
         fn set_show_enabled(&self, e: bool) {
@@ -325,16 +351,24 @@ mod tests {
             *self.pause.borrow_mut() = t.to_string();
             self.calls.borrow_mut().push(format!("pause={t}"));
         }
+        fn set_settings_enabled(&self, e: bool) {
+            *self.settings.borrow_mut() = e;
+            self.calls.borrow_mut().push(format!("settings={e}"));
+        }
     }
 
     #[derive(Default)]
     struct FakeControl {
         sent: RefCell<Vec<Cmd>>,
         quits: RefCell<u32>,
+        settings_opens: RefCell<u32>,
     }
     impl Control for FakeControl {
         fn send(&self, cmd: Cmd) {
             self.sent.borrow_mut().push(cmd);
+        }
+        fn open_settings(&self) {
+            *self.settings_opens.borrow_mut() += 1;
         }
         fn quit(&self) {
             *self.quits.borrow_mut() += 1;
@@ -348,17 +382,18 @@ mod tests {
         assert_eq!(TrayAction::from_id(id::FOLLOW), Some(TrayAction::ToggleFollow));
         assert_eq!(TrayAction::from_id(id::PAUSE), Some(TrayAction::TogglePause));
         assert_eq!(TrayAction::from_id(id::QUIT), Some(TrayAction::Quit));
+        assert_eq!(TrayAction::from_id(id::SETTINGS), Some(TrayAction::OpenSettings));
         assert_eq!(TrayAction::from_id("otro"), None);
-        let ids = [id::SHOW, id::HIDE, id::FOLLOW, id::PAUSE, id::QUIT];
-        assert_eq!(ids.iter().collect::<std::collections::HashSet<_>>().len(), 5);
+        let ids = [id::SHOW, id::HIDE, id::FOLLOW, id::PAUSE, id::SETTINGS, id::QUIT];
+        assert_eq!(ids.iter().collect::<std::collections::HashSet<_>>().len(), 6);
     }
 
     #[test]
     fn model_reflects_visibility_follow_and_pause() {
         let m = menu_model(&view(false, false, true));
-        assert_eq!(m, MenuModel { show_enabled: false, hide_enabled: true, follow_checked: true, pause_text: "Pausar" });
+        assert_eq!(m, MenuModel { show_enabled: false, hide_enabled: true, follow_checked: true, pause_text: "Pausar", settings_enabled: true });
         let m = menu_model(&view(true, true, false));
-        assert_eq!(m, MenuModel { show_enabled: true, hide_enabled: false, follow_checked: false, pause_text: "Reanudar" });
+        assert_eq!(m, MenuModel { show_enabled: true, hide_enabled: false, follow_checked: false, pause_text: "Reanudar", settings_enabled: true });
         // pausar no es ocultar y ocultar no quita la pausa: dimensiones independientes
         let m = menu_model(&view(true, false, true));
         assert!(m.hide_enabled && !m.show_enabled && m.pause_text == "Reanudar");
@@ -371,16 +406,16 @@ mod tests {
         let sink = FakeSink::default();
         let sync = MenuSync::new(&sink);
         assert!(sync.sync(&view(false, false, true)));
-        assert_eq!(sink.calls.borrow().len(), 4);
+        assert_eq!(sink.calls.borrow().len(), 5);
         assert!(!sync.sync(&view(false, false, true)), "igual: nada que aplicar");
-        assert_eq!(sink.calls.borrow().len(), 4);
+        assert_eq!(sink.calls.borrow().len(), 5);
         // solo cambia la pausa → una única llamada
         assert!(sync.sync(&view(true, false, true)));
         assert_eq!(sink.calls.borrow().last().unwrap(), "pause=Reanudar");
-        assert_eq!(sink.calls.borrow().len(), 5);
+        assert_eq!(sink.calls.borrow().len(), 6);
         // ocultar → Mostrar/Ocultar cambian, la pausa y el seguimiento no
         assert!(sync.sync(&view(true, true, true)));
-        assert_eq!(&sink.calls.borrow()[5..], ["show=true", "hide=false"]);
+        assert_eq!(&sink.calls.borrow()[6..], ["show=true", "hide=false"]);
     }
 
     #[test]
@@ -409,7 +444,7 @@ mod tests {
         sync.sync(&view(false, false, true));
         sync.invalidate();
         assert!(sync.sync(&view(false, false, true)));
-        assert_eq!(sink.calls.borrow().len(), 8);
+        assert_eq!(sink.calls.borrow().len(), 10);
     }
 
     #[test]
@@ -426,6 +461,26 @@ mod tests {
         dispatch(TrayAction::Quit, &ctl);
         assert_eq!(*ctl.quits.borrow(), 1);
         assert_eq!(ctl.sent.borrow().len(), 6, "Cerrar no envía órdenes de comportamiento");
+    }
+
+    #[test]
+    fn settings_item_is_always_available_and_opens_the_settings_window() {
+        for (p, h, f) in [(false, false, true), (true, false, true), (false, true, false), (true, true, false)] {
+            assert!(menu_model(&view(p, h, f)).settings_enabled, "({p},{h},{f})");
+        }
+        let mut v = view(false, true, true);
+        v.suppressed = true;
+        assert!(menu_model(&v).settings_enabled, "tampoco depende de la supresión");
+        let sink = FakeSink::default();
+        let sync = MenuSync::new(&sink);
+        sync.sync(&view(false, false, true));
+        assert!(*sink.settings.borrow());
+        let ctl = FakeControl::default();
+        dispatch(TrayAction::OpenSettings, &ctl);
+        dispatch(TrayAction::OpenSettings, &ctl);
+        assert_eq!(*ctl.settings_opens.borrow(), 2, "cada clic pide abrir; la unicidad la garantiza la ventana");
+        assert!(ctl.sent.borrow().is_empty(), "abrir ajustes no envía órdenes al motor");
+        assert_eq!(*ctl.quits.borrow(), 0);
     }
 
     #[test]

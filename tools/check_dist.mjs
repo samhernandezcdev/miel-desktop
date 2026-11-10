@@ -11,7 +11,7 @@
 //     los @keyframes del rig y prefers-reduced-motion (el CSS viaja como archivo propio, permitido por 'self').
 //  2. El JS compilado NO incluye CSS del rig embebido (ni @keyframes ni selectores de rostro): significa
 //     que el SVG no lleva un <style> dentro.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const STATES = ["idle", "happy", "curious", "thinking", "sleepy", "surprised", "talking", "resting"];
@@ -71,18 +71,130 @@ export function checkDist(css, js) {
   return errors;
 }
 
+// ---- Entradas de build (E3): la mascota (index.html) y la ventana de ajustes (settings.html) ----------------------
+// La CSP de producción es `default-src 'self'; script-src 'self'; style-src 'self'; ...`: sin <style> ni estilos en línea,
+// sin scripts en línea y sin recursos remotos. `index.html` conserva UN <style> en línea (evita el destello opaco; Tauri le
+// añade el nonce); `settings.html` no puede llevar ninguno.
+const REMOTE = /^(?:[a-z][a-z0-9+.-]*:)?\/\//i; // http:, https:, ws:, ftp:, ... o //host
+
+/** Referencias de un HTML: scripts (con src), hojas de estilo y otros `href`/`src`. */
+export function parseHtml(html) {
+  const scripts = [];
+  const links = [];
+  const inlineScripts = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    const src = /\ssrc\s*=\s*["']([^"']+)["']/i.exec(m[1])?.[1];
+    if (src) scripts.push(src);
+    else inlineScripts.push(m[2]);
+  }
+  for (const m of html.matchAll(/<link\b([^>]*)>/gi)) {
+    const href = /\shref\s*=\s*["']([^"']+)["']/i.exec(m[1])?.[1];
+    const rel = /\srel\s*=\s*["']([^"']+)["']/i.exec(m[1])?.[1] ?? "";
+    if (href) links.push({ href, rel: rel.toLowerCase() });
+  }
+  const inlineStyles = [...html.matchAll(/<style\b[^>]*>/gi)].length;
+  const styleAttrs = [...html.matchAll(/\sstyle\s*=/gi)].length;
+  const handlers = [...html.matchAll(/\son[a-z]+\s*=/gi)].length;
+  const otherUrls = [...html.matchAll(/\s(?:src|href|action|data|poster|srcset)\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
+  return { scripts, links, inlineScripts, inlineStyles, styleAttrs, handlers, otherUrls };
+}
+
+const assetName = (url) => (url.startsWith("/assets/") ? url.slice("/assets/".length) : null);
+
+/**
+ * Comprueba UNA entrada HTML: recursos locales y existentes, sin script/estilo en línea (salvo los permitidos),
+ * sin manejadores `on*=` ni atributos `style=`, y sin URL remotas. Devuelve `{ errors, css, js }` con los archivos
+ * enlazados (nombres dentro de `assets/`).
+ */
+export function checkEntry(name, html, files, { allowInlineStyle }) {
+  const errors = [];
+  const h = parseHtml(html);
+  if (h.scripts.length === 0) errors.push(`${name}: no enlaza ningún script`);
+  if (h.inlineScripts.length) errors.push(`${name}: contiene <script> en línea (la CSP lo bloquea)`);
+  if (h.inlineStyles && !allowInlineStyle) errors.push(`${name}: contiene <style> en línea (la CSP lo bloquea; usa CSS externo)`);
+  if (h.styleAttrs) errors.push(`${name}: contiene atributos style="" (la CSP los bloquea)`);
+  if (h.handlers) errors.push(`${name}: contiene manejadores de eventos en línea (onclick=…)`);
+  for (const u of h.otherUrls) if (REMOTE.test(u)) errors.push(`${name}: recurso remoto «${u}»`);
+  const css = [];
+  const js = [];
+  const refs = [...h.scripts.map((u) => ({ u, kind: "script" })), ...h.links.map((l) => ({ u: l.href, kind: l.rel }))];
+  for (const { u, kind } of refs) {
+    if (REMOTE.test(u)) continue; // ya notificado arriba
+    const a = assetName(u);
+    if (a === null) {
+      errors.push(`${name}: «${u}» no es un recurso local de /assets/`);
+      continue;
+    }
+    if (!files.has(a)) {
+      errors.push(`${name}: referencia «${u}» pero el archivo no existe en dist/assets`);
+      continue;
+    }
+    if (kind === "stylesheet") css.push(a);
+    else if (a.endsWith(".js")) js.push(a);
+  }
+  return { errors, css, js, scripts: h.scripts.map(assetName).filter(Boolean), stylesheets: css };
+}
+
+/** CSS sin recursos remotos (`@import`, `url()`, fuentes). */
+export function checkCssLocal(name, css) {
+  const errors = [];
+  if (/@import\s+(?:url\(\s*)?["']?\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(css)) errors.push(`${name}: @import remoto`);
+  if (/url\(\s*["']?\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(css)) errors.push(`${name}: url() remoto`);
+  return errors;
+}
+
+/** El JS propio de la entrada de ajustes no crea ni inyecta estilos (la CSP lo bloquearía). */
+export function checkNoInjectedStyles(name, js) {
+  const errors = [];
+  for (const [needle, re] of [
+    ['createElement("style")', /createElement\(\s*["']style["']\s*\)/],
+    ["<style", /<style[\s>]/],
+    ["cssText", /\.cssText\b/],
+    ['setAttribute("style")', /setAttribute\(\s*["']style["']/],
+    ["adoptedStyleSheets", /adoptedStyleSheets/],
+    ["insertRule", /insertRule\s*\(/],
+  ]) {
+    if (re.test(js)) errors.push(`${name}: el JS inyecta estilos (${needle}); la CSP de producción lo bloquea`);
+  }
+  return errors;
+}
+
+/**
+ * Comprobación de las DOS entradas. `files` = Map(nombre dentro de assets/ → contenido de texto).
+ * Conserva toda la guardia de la mascota (`checkDist`: ocho rostros, @keyframes, capa de rendimiento) sobre el CSS de
+ * `index.html` y el JS compilado completo.
+ */
+export function checkEntries(indexHtml, settingsHtml, files) {
+  const errors = [];
+  if (indexHtml == null) return ["falta dist/index.html"];
+  if (settingsHtml == null) return ["falta dist/settings.html (la entrada de la ventana de ajustes)"];
+  const main = checkEntry("index.html", indexHtml, files, { allowInlineStyle: true });
+  const sett = checkEntry("settings.html", settingsHtml, files, { allowInlineStyle: false });
+  errors.push(...main.errors, ...sett.errors);
+  if (main.stylesheets.length === 0) errors.push("index.html: no enlaza ninguna hoja de estilos (el CSS de la mascota debe ser externo)");
+  if (sett.stylesheets.length === 0) errors.push("settings.html: no enlaza ninguna hoja de estilos (el CSS de la ventana debe ser externo)");
+  for (const c of new Set([...main.css, ...sett.css])) errors.push(...checkCssLocal(c, files.get(c) ?? ""));
+  for (const j of sett.scripts) errors.push(...checkNoInjectedStyles(j, files.get(j) ?? ""));
+  // guardia de la mascota: CSS enlazado por index.html + TODO el JS compilado (cualquiera podría embeber el rig)
+  const mainCss = main.css.map((f) => files.get(f)).join("\n");
+  const allJs = [...files].filter(([f]) => f.endsWith(".js")).map(([, v]) => v).join("\n");
+  errors.push(...checkDist(mainCss, allJs));
+  return errors;
+}
+
 function main() {
-  const dir = join(process.cwd(), "dist", "assets");
-  const files = readdirSync(dir);
-  const css = files.filter((f) => f.endsWith(".css")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
-  const js = files.filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
-  const errors = checkDist(css, js);
+  const root = join(process.cwd(), "dist");
+  const dir = join(root, "assets");
+  const read = (p) => (existsSync(p) ? readFileSync(p, "utf8") : null);
+  const files = new Map(readdirSync(dir).filter((f) => /\.(css|js)$/.test(f)).map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+  const errors = checkEntries(read(join(root, "index.html")), read(join(root, "settings.html")), files);
   if (errors.length) {
     console.error("✗ check:dist — el frontend compilado NO es seguro para la CSP de producción:");
     for (const e of errors) console.error("  - " + e);
     process.exit(1);
   }
-  console.log(`✓ check:dist — CSS (${css.length} B) con los 8 estados y animaciones; JS sin CSS del rig embebido`);
+  const css = [...files].filter(([f]) => f.endsWith(".css")).map(([, v]) => v).join("\n");
+  console.log(`✓ check:dist — 2 entradas (index.html y settings.html) sin scripts en línea ni recursos remotos y settings.html sin <style>; CSS (${css.length} B) con los 8 estados y animaciones; JS sin CSS del rig embebido`);
 }
 
 if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}` || process.argv[1]?.endsWith("check_dist.mjs")) main();

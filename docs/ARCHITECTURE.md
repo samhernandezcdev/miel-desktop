@@ -28,11 +28,12 @@ Miel es una aplicación **Tauri 2** (Rust + WebView2) con un frontend **React + 
 | `mascot/motion.rs`, `geometry.rs` | Cinemática con dt real (velocidad/aceleración limitadas) y geometría en píxeles físicos (monitores, DPI, coordenadas negativas, ancla descentrada). |
 | `mascot/engine.rs` | **Un único hilo** + `Condvar`. Une FSM, Talker y movimiento; sin polling en Idle/Rest/Paused/Hidden. |
 | `mascot/host.rs` | Implementación de `Host` sobre Tauri (cursor, monitores, ventana, eventos). El motor se prueba con un `Host` falso. |
-| `tray.rs` | Icono único y menú; `MenuSync` aplica solo lo que cambió; `dispatch` traduce acciones en órdenes. |
+| `tray.rs` | Icono único y menú (incluye «Ajustes…», E3); `MenuSync` aplica solo lo que cambió; `dispatch` traduce acciones en órdenes. |
+| `settings_window.rs` | Ventana de ajustes (E3): etiqueta `settings`, creada desde Rust, de instancia única, **destruida** al cerrarla; ventana normal (marco, enfocable, sin «siempre encima»). |
 | `lifecycle.rs` | Primer `show` (bandeja lista + página cargada), cierre en dos fases, `fatal`. |
 | `display_watch.rs` | Subclase Win32 (`WM_DISPLAYCHANGE`, `WM_DPICHANGED`, área de trabajo) → `Cmd::GeometryChanged`. |
 | `errlog.rs` | Registro local, acotado y saneado de errores del frontend. |
-| `diag.rs` | Solo diagnóstico (`debug` o `--features diag`): guion `MIEL_DIAG_SCRIPT` para medir sin automatizar la UI. |
+| `diag.rs` | Solo diagnóstico (`debug` o `--features diag`): guiones `MIEL_DIAG_SCRIPT` (órdenes del motor) y `MIEL_DIAG_UI_SCRIPT` (abrir/cerrar ajustes, `set:clave=valor`) para medir sin automatizar la UI. |
 
 ### La FSM y los mensajes
 

@@ -1,0 +1,275 @@
+/*
+ * Ventana de ajustes (E3). CSS EXTERNO (la CSP de producción no admite <style> ni estilos en línea).
+ * Unidades relativas (rem/em/ch) para que funcione con la escala de pantalla de Windows (100–200 %) y
+ * con el tamaño de texto del sistema; sin anchos fijos en píxeles. Sin fuentes ni recursos remotos.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: #fbf8f1;
+  --surface: #ffffff;
+  --text: #2a2418;
+  --muted: #5e5642;
+  --border: #d8ceb6;
+  --accent: #b36b00; /* contraste >= 4,5:1 sobre --surface y --bg */
+  --accent-text: #ffffff;
+  --focus: #0b57d0;
+  --notice-bg: #fff2cc;
+  --notice-text: #3d2c00;
+  --banner-bg: #eef4ff;
+  --banner-text: #12284d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1810;
+    --surface: #26221a;
+    --text: #f3ecda;
+    --muted: #c4b99f;
+    --border: #4a4332;
+    --accent: #f0b341;
+    --accent-text: #1b1810;
+    --focus: #8ab4ff;
+    --notice-bg: #4a3a0d;
+    --notice-text: #ffe9a8;
+    --banner-bg: #1b2842;
+    --banner-text: #d6e4ff;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%; /* respeta el tamaño de texto del sistema */
+}
+
+body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0.25rem 0 0.25rem;
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: 1.125rem;
+  margin: 0 0 0.5rem;
+  line-height: 1.3;
+}
+
+p {
+  margin: 0.25rem 0;
+}
+
+.intro {
+  margin-bottom: 0.75rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.banner {
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  margin: 0.5rem 0;
+}
+
+/* El hueco del aviso se reserva siempre: la página no salta cuando aparece. */
+.notice-slot {
+  min-height: 3.25rem;
+  margin: 0.5rem 0;
+}
+
+.notice {
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  border: 1px solid var(--border);
+  border-left-width: 0.375rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.875rem;
+}
+
+.state {
+  padding: 1rem 0;
+}
+
+.sections section,
+.privacy {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.875rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.field {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.sections section > h2 + .field {
+  border-top: 0;
+}
+
+.field-head > * {
+  min-width: 0;
+}
+
+.field-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+/* sin tamaños en píxeles fijos: el interruptor crece con el texto */
+.field-label {
+  font-weight: 600;
+}
+
+.field > .field-head:has(.radios) {
+  align-items: flex-start;
+}
+
+.hint {
+  margin: 0.125rem 0 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.hint.restart {
+  font-style: italic;
+}
+
+.radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  cursor: pointer;
+}
+
+.radio input,
+.switch {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.number-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+/* Puede encogerse: con texto muy grande o la ventana mínima no desborda en horizontal. */
+.number {
+  flex: 0 1 7rem;
+  width: 7rem;
+  min-width: 3rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.5rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--muted);
+  border-radius: 0.375rem;
+}
+
+.unit {
+  color: var(--muted);
+  min-width: 0;
+}
+
+.button {
+  font: inherit;
+  min-height: 2.25rem;
+  padding: 0.25rem 1rem;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.privacy ul {
+  margin: 0.25rem 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.privacy li {
+  margin: 0.25rem 0;
+}
+
+/* Foco SIEMPRE visible con teclado (no se elimina el contorno). */
+:focus-visible {
+  outline: 0.1875rem solid var(--focus);
+  outline-offset: 0.125rem;
+}
+
+/* Movimiento reducido: nada se anima en esta ventana, y aun así se anulan las transiciones por seguridad. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Alto contraste de Windows: se usan los colores del sistema y se mantienen los bordes. */
+@media (forced-colors: active) {
+  .banner,
+  .notice,
+  .sections section,
+  .privacy,
+  .number {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+  .button {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
+  .radio input,
+  .switch {
+    accent-color: Highlight;
+  }
+  :focus-visible {
+    outline: 0.1875rem solid Highlight;
+  }
+}

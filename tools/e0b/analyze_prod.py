@@ -16,7 +16,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-LINE = re.compile(r"t=(\d+) vista v\d+ (\w+)/(\w+) paused=(\w+) hidden=(\w+) follow=(\w+) msg=(\S+)")
+LINE = re.compile(r"t=(\d+) vista v\d+ (\w+)/(\w+) paused=(\w+) hidden=(\w+) (?:suppressed=\w+ sleeping=\w+ )?follow=(\w+) msg=(\S+)")  # E1b añadió suppressed/sleeping al registro
 ORDER = ["Idle", "Rest", "Sleepy", "Reaction", "Paused", "Hidden"]
 
 

@@ -1,0 +1,264 @@
+{
+  "exe": "src-tauri/target-diag/release/miel.exe",
+  "checks": [
+    {
+      "name": "línea base: solo la ventana de la mascota (sin ventana de ajustes)",
+      "ok": true,
+      "detail": "{\"procs\":7,\"privateMb\":158.2,\"workingSetMb\":343.6}"
+    },
+    {
+      "name": "la mascota sigue click-through, sin foco y siempre encima",
+      "ok": true,
+      "detail": "[{\"title\":\"Miel\",\"visible\":true,\"class\":\"Tauri Window\",\"topmost\":true,\"transparent\":true,\"noactivate\":true,\"toolwindow\":false,\"caption\":true,\"thickframe\":false}]"
+    },
+    {
+      "name": "la ventana de ajustes se abre (etiqueta settings, desde Rust)",
+      "ok": true,
+      "detail": "a los 6.6 s"
+    },
+    {
+      "name": "ventana de ajustes: con marco, redimensionable, en la barra de tareas, SIN siempre-encima, activable",
+      "ok": true,
+      "detail": "[{\"title\":\"Miel � Ajustes / Settings\",\"visible\":true,\"class\":\"Tauri Window\",\"topmost\":false,\"transparent\":false,\"noactivate\":false,\"toolwindow\":false,\"caption\":true,\"thickframe\":true}]"
+    },
+    {
+      "name": "la página carga con CSS externo (hoja de estilos aplicada, sin <style> ni style=\"\")",
+      "ok": true,
+      "detail": "fondo rgb(27, 24, 16)"
+    },
+    {
+      "name": "7 controles nativos (3 radios, 2 interruptores, 2 numéricos)",
+      "ok": true,
+      "detail": "radio:Pequeña (64 px) | radio:Mediana (96 px) | radio:Grande (128 px) | checkbox:Movimiento reducido | number:Velocidad | checkbox:Mostrar mensajes | number:Tiempo entre mensajes"
+    },
+    {
+      "name": "cero violaciones de CSP en la carga",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sin errores de consola ni excepciones",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sin recursos remotos: todas las peticiones de la página son locales",
+      "ok": true,
+      "detail": "7 locales"
+    },
+    {
+      "name": "settings://changed llega a la ventana REAL: el intervalo pasó a 33 por un cambio hecho desde Rust",
+      "ok": true,
+      "detail": "a los 14.4 s; antes 12"
+    },
+    {
+      "name": "…sin que la página llamara a get_settings ni a set_setting",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "segundo evento: el tamaño pasó a 64 (radio)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "instancia única: la segunda petición solo enfoca (Focused) y hay una sola ventana",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Tab recorre los 5 puntos de parada en orden (tamaño, mov. reducido, velocidad, mensajes, intervalo)",
+      "ok": true,
+      "detail": "radio:Pequeña (64 px):vis:outline → checkbox:Movimiento reducido:vis:outline → number:Velocidad:vis:outline → checkbox:Mostrar mensajes:vis:outline → number:Tiempo entre mensajes:vis:outline"
+    },
+    {
+      "name": "el foco es visible con teclado en cada parada (:focus-visible + contorno)",
+      "ok": true,
+      "detail": "radio:Pequeña (64 px):vis:outline → checkbox:Movimiento reducido:vis:outline → number:Velocidad:vis:outline → checkbox:Mostrar mensajes:vis:outline → number:Tiempo entre mensajes:vis:outline"
+    },
+    {
+      "name": "teclado: flecha derecha en el grupo de tamaño → Rust aplica 96",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "teclado: Espacio en «Movimiento reducido» → Rust lo aplica (true)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "teclado: escribir 300 + Enter en Velocidad → Rust aplica 300",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "valor rechazado por Rust: aviso breve visible y el control vuelve al valor real (300)",
+      "ok": true,
+      "detail": "No se pudo cambiar «Velocidad»: el valor no es válido. Se restauró el valor actual. / 300"
+    },
+    {
+      "name": "fuera de rango: Rust ajusta a 600 y la ventana lo muestra con aviso",
+      "ok": true,
+      "detail": "«Velocidad» se ajustó a 600, el valor permitido más cercano."
+    },
+    {
+      "name": "tema claro/oscuro: el fondo cambia con prefers-color-scheme",
+      "ok": true,
+      "detail": "rgb(251, 248, 241) / rgb(27, 24, 16)"
+    },
+    {
+      "name": "alto contraste y movimiento reducido: la página responde (bordes conservados, sin animaciones)",
+      "ok": true,
+      "detail": "{\"forced\":true,\"reduce\":true,\"border\":\"solid\",\"anim\":\"none\"}"
+    },
+    {
+      "name": "sin desborde horizontal en 360/520/900 px × escala 100/125/150/200 % × texto 100–200 % (emulado)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "idioma: con navegador en inglés la ventana sale en inglés (lang=en)",
+      "ok": true,
+      "detail": "{\"h1\":\"Miel settings\",\"lang\":\"en\",\"langs\":[\"en-US\",\"en\"]}"
+    },
+    {
+      "name": "al cerrarla la página desaparece (la ventana se destruye)",
+      "ok": true,
+      "detail": "a los 75.3 s"
+    },
+    {
+      "name": "tras cerrar no queda ninguna ventana de ajustes (ni oculta)",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "reabrir tras cerrar funciona (etiqueta liberada)",
+      "ok": true,
+      "detail": "a los 95.6 s"
+    },
+    {
+      "name": "la ventana reabierta muestra sus controles",
+      "ok": true,
+      "detail": "7"
+    },
+    {
+      "name": "Rust registró 2 creaciones y 1 enfoque (abrir, enfocar, cerrar, reabrir)",
+      "ok": true,
+      "detail": "Created×2"
+    }
+  ],
+  "stats": {
+    "baseline": {
+      "procs": 7,
+      "privateMb": 158.2,
+      "workingSetMb": 343.6
+    },
+    "mainWindow": [
+      {
+        "title": "Miel",
+        "visible": true,
+        "class": "Tauri Window",
+        "topmost": true,
+        "transparent": true,
+        "noactivate": true,
+        "toolwindow": false,
+        "caption": true,
+        "thickframe": false
+      }
+    ],
+    "settingsWindow": [
+      {
+        "title": "Miel � Ajustes / Settings",
+        "visible": true,
+        "class": "Tauri Window",
+        "topmost": false,
+        "transparent": false,
+        "noactivate": false,
+        "toolwindow": false,
+        "caption": true,
+        "thickframe": true
+      }
+    ],
+    "open": {
+      "procs": 8,
+      "privateMb": 210.7,
+      "workingSetMb": 447.8
+    },
+    "dom": {
+      "title": "Miel · Ajustes",
+      "lang": "es",
+      "langs": [
+        "es-419",
+        "es",
+        "es-ES",
+        "en",
+        "en-GB",
+        "en-US"
+      ],
+      "h1": "Ajustes de Miel",
+      "styleEls": 0,
+      "sheets": 1,
+      "inlineStyleAttrs": 0,
+      "bg": "rgb(27, 24, 16)",
+      "font": "\"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+      "controls": [
+        "radio:Pequeña (64 px)",
+        "radio:Mediana (96 px)",
+        "radio:Grande (128 px)",
+        "checkbox:Movimiento reducido",
+        "number:Velocidad",
+        "checkbox:Mostrar mensajes",
+        "number:Tiempo entre mensajes"
+      ],
+      "radios": [
+        "64",
+        "96*",
+        "128"
+      ],
+      "interval": "12",
+      "speed": "260"
+    },
+    "requests": [
+      "http://tauri.localhost/settings.html",
+      "http://tauri.localhost/assets/settings-LBz_vccC.js",
+      "http://tauri.localhost/assets/event-BD-V9kVN.js",
+      "http://tauri.localhost/assets/settings-DB9JEpOu.css",
+      "http://ipc.localhost/plugin%3Aevent%7Clisten",
+      "http://tauri.localhost/favicon.ico",
+      "http://ipc.localhost/get_settings"
+    ],
+    "tabOrder": [
+      "radio:Pequeña (64 px):vis:outline",
+      "checkbox:Movimiento reducido:vis:outline",
+      "number:Velocidad:vis:outline",
+      "checkbox:Mostrar mensajes:vis:outline",
+      "number:Tiempo entre mensajes:vis:outline",
+      "body"
+    ],
+    "afterClose3s": {
+      "procs": 7,
+      "privateMb": 179.3,
+      "workingSetMb": 400.5
+    },
+    "afterClose7s": {
+      "procs": 7,
+      "privateMb": 177.5,
+      "workingSetMb": 398.8
+    },
+    "reopened": {
+      "procs": 8,
+      "privateMb": 220,
+      "workingSetMb": 472.2
+    },
+    "afterSecondClose": {
+      "procs": 7,
+      "privateMb": 177.1,
+      "workingSetMb": 401.7
+    }
+  },
+  "notes": [
+    "idioma de la persona en esta máquina: [\"es-419\",\"es\",\"es-ES\",\"en\",\"en-GB\",\"en-US\"]; ventana en «es»"
+  ],
+  "settingsRestored": "ausente como al inicio: true",
+  "leftover": "0"
+}

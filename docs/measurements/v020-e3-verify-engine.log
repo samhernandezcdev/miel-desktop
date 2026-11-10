@@ -1,0 +1,32 @@
+[miel] inicio: paused=false hidden=false follow=true pet_size=96 preferencias=Missing
+[miel] t=1794321789918 relectura de monitores
+[miel] get_view -> v0
+[miel] t=1794321795924 diag: OpenSettings a los 6 s
+[miel] diag: ajustes Created
+[miel] t=1794321803924 diag: Set("message_interval_minutes", Number(33)) a los 14 s
+[miel] diag: set message_interval_minutes aplicado
+[miel] t=1794321805923 diag: Set("pet_size", Number(64)) a los 16 s
+[miel] diag: set pet_size aplicado
+[miel] t=1794321809923 diag: OpenSettings a los 20 s
+[miel] diag: ajustes Focused
+[miel] t=1794321818333 vista v1 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=true msg=None
+[miel] t=1794321824146 vista v2 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=true msg=None
+[miel] t=1794321824162 vista v3 Follow/Curious paused=false hidden=false suppressed=false sleeping=false follow=true msg=None
+[miel] t=1794321824162 relectura de monitores
+[miel] t=1794321826178 relectura de monitores
+[miel] t=1794321828185 relectura de monitores
+[miel] t=1794321830194 relectura de monitores
+[miel] t=1794321832201 relectura de monitores
+[miel] t=1794321834234 relectura de monitores
+[miel] t=1794321834358 vista v4 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=true msg=None
+[miel] t=1794321856750 vista v5 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=false follow=true msg=None
+[miel] t=1794321856750 relectura de monitores
+[miel] t=1794321858754 relectura de monitores
+[miel] t=1794321860751 vista v6 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=true msg=None
+[miel] t=1794321860797 relectura de monitores
+[miel] t=1794321864924 diag: CloseSettings a los 75 s
+[miel] diag: ajustes cerrada=true
+[miel] t=1794321884924 diag: OpenSettings a los 95 s
+[miel] diag: ajustes Created
+[miel] t=1794321904923 diag: CloseSettings a los 115 s
+[miel] diag: ajustes cerrada=true

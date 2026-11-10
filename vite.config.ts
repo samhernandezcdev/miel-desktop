@@ -13,6 +13,16 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   clearScreen: false,
   server: { port: 1420, strictPort: true },
-  build: { target: "chrome120", sourcemap: false },
+  build: {
+    target: "chrome120",
+    sourcemap: false,
+    // Dos entradas: la mascota (index.html) y la ventana de ajustes (settings.html, E3).
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        settings: fileURLToPath(new URL("./settings.html", import.meta.url)),
+      },
+    },
+  },
   test: { environment: "jsdom", include: ["src/**/*.test.{ts,tsx}"], setupFiles: ["src/test/setup.ts"] },
 });

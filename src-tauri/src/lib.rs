@@ -6,6 +6,7 @@ mod errlog;
 mod lifecycle;
 pub mod mascot;
 mod settings;
+pub mod settings_window;
 pub mod tray;
 mod window;
 #[cfg(windows)]
@@ -71,9 +72,20 @@ fn set_setting(
     key: String,
     value: serde_json::Value,
 ) -> Result<Settings, String> {
-    let (applied, changed) = store.set_setting(&key, &value).map_err(|e| e.to_string())?;
+    apply_setting(&app, &store, &key, &value)
+}
+
+/// Cuerpo de `set_setting` (también lo usa la herramienta de diagnóstico): aplica, y si hubo un cambio
+/// real avisa a la ventana `settings`.
+pub(crate) fn apply_setting(
+    app: &tauri::AppHandle,
+    store: &SettingsStore,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<Settings, String> {
+    let (applied, changed) = store.set_setting(key, value).map_err(|e| e.to_string())?;
     if changed {
-        if let Err(e) = app.emit_to("settings", settings::EVENT_CHANGED, &applied) {
+        if let Err(e) = app.emit_to(settings_window::LABEL, settings::EVENT_CHANGED, &applied) {
             eprintln!("[miel] no se pudo emitir el cambio de ajustes: {e}");
         }
     }
@@ -257,7 +269,10 @@ pub fn run() {
             }
             watch_displays(app.handle(), &win);
             #[cfg(any(debug_assertions, feature = "diag"))]
-            diag::spawn_script(app.handle());
+            {
+                diag::spawn_script(app.handle());
+                diag::spawn_ui_script(app.handle());
+            }
             if let Some(lc) = app.try_state::<Lifecycle>() {
                 lc.mark_ready();
             }
@@ -267,14 +282,16 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Cambio de escala DPI (evento de Tauri; el resto de cambios de pantalla llegan por
             // `display_watch`). Ambos solo avisan al motor, que agrupa y actúa en su hilo.
-            if let WindowEvent::ScaleFactorChanged { .. } = event {
+            // (solo la mascota: la ventana de ajustes, E3, no afecta a la geometría de Miel)
+            if let (WindowEvent::ScaleFactorChanged { .. }, true) = (event, window.label() == "main") {
                 if let Some(engine) = window.app_handle().try_state::<Engine>() {
                     engine.send(Cmd::GeometryChanged);
                 }
             }
         })
         .on_page_load(|webview, payload| {
-            if let tauri::webview::PageLoadEvent::Finished = payload.event() {
+            // La carga de la ventana de ajustes (E3) no cuenta para mostrar la mascota.
+            if let (tauri::webview::PageLoadEvent::Finished, true) = (payload.event(), webview.label() == "main") {
                 let app = webview.app_handle();
                 if let Some(lc) = app.try_state::<Lifecycle>() {
                     lc.mark_loaded();
