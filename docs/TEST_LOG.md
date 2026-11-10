@@ -384,3 +384,20 @@ Cambios (sin comportamiento nuevo: en producción `suppressed` y `sleeping` son 
 | `tsc` / `check:dist` / `check_privacy.py` (+autotest) / `licenses:check` / clippy `-D warnings` | OK / OK / OK / OK / sin avisos |
 
 Cubierto por pruebas de tabla: las 16 combinaciones `hidden × paused × suppressed × sleeping` (visible, corre, mensajes, expresión, `next_wakeup`, avance del reloj y recuperación con rebase de plazos), equivalencia de `is_suspended` con `paused || hidden` en todo el espacio, y los casos 1–9 de §5.2 (incluidos 8 y 8b). El caso 10 (errores consecutivos de la sonda) corresponde al detector de E4 y no existe todavía. Sin medición de CPU (no toca lo visual ni la temporización: `Fsm` solo añade ramas con las banderas a `false`).
+
+## v0.2.0 · E2: ajustes de esquema 2 e IPC mínimo, sin ventana (2026-11-10)
+
+Cambios (sin cambio visible: ningún interruptor nuevo tiene efecto todavía; la ventana de ajustes es E3):
+- `settings.rs`: `SCHEMA_VERSION = 2`; campos `dnd_auto_enabled` (true), `sleep_enabled` (true), `sleep_after_minutes` (10; permitidos 5/10/15/30/60, D8; otro valor → el permitido más cercano), `proximity_enabled` (true), `time_of_day_enabled` (true). Migración 1→2 al cargar sin reescribir: copia fiel a `settings.v1.bak.json` con `create_new` (nunca sobrescribe una copia existente) y, si no pudo hacerse, se reintenta antes del primer guardado, que no sobrescribe el original si falla. `LoadOutcome::Migrated`. Archivo corrupto: valores por defecto y copia diagnóstica; el original no se borra al cargar.
+- IPC: `get_settings`, `set_setting(key, value)` (lista cerrada de 10 claves, tipos estrictos, rangos saneados en Rust, devuelve las preferencias aplicadas) y evento `settings://changed` (solo a la ventana `settings`, solo si hubo cambio real). `paused`, `follow_enabled` y `schema_version` no son modificables por IPC.
+- `capabilities/settings.json` (ventana `settings`: `core:event:allow-listen/unlisten`, `allow-get-settings`, `allow-set-setting`); `default.json` (`main`) sin cambios. `tools/privacy_policy.json` y el autotest de `check_privacy.py` actualizados (5 negativos nuevos). `.gitignore`: excepción para esa capability (el patrón `settings.json` la ocultaba) y `settings.v*.bak.json` ignorados.
+- Las pruebas usan solo directorios temporales; ninguna toca el `settings.json` real (la carpeta de configuración de la persona ni existe en esta máquina).
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo test` | 222 + 5 (antes 201 + 5): +21 en `settings`; aserciones previas sin modificar (solo se amplió una aserción de `describe_outcome` en `lib.rs`: añadida, no cambiada) |
+| `vitest` | 71/71 |
+| clippy `-D warnings`, `tsc`, `check:dist`, `check_privacy.py` + autotest, `licenses:check` | OK |
+| SVG | 19, sin diferencias con HEAD |
+
+Compatibilidad hacia atrás (copia congelada del lector de v0.1.0 en un test): ante un archivo de esquema 2, v0.1.0 detecta esquema futuro (2), carga los campos comunes, copia el archivo a `settings.v2.bak.json` y, en su siguiente guardado, lo reescribe como esquema 1 sin los campos nuevos. Al volver a v0.2.0 los interruptores regresan a «activado»; lo apagado sigue recuperable a mano en `settings.v2.bak.json`.

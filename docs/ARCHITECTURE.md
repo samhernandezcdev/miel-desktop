@@ -50,9 +50,11 @@ Miel es una aplicación **Tauri 2** (Rust + WebView2) con un frontend **React + 
 - **Rust → React**: evento `mascot://view` solo cuando la vista compuesta cambia (nunca por frame).
   La vista tiene `version` monótona (suma de los contadores de FSM y Talker); React descarta versiones
   anteriores. React se suscribe **y después** pide `get_view`, de modo que no se pierde ningún cambio.
-- **React → Rust**: tres comandos, cada uno con su permiso explícito (`allow-get-view`,
+- **React → Rust**: tres comandos para `main`, cada uno con su permiso explícito (`allow-get-view`,
   `allow-get-display-prefs`, `allow-report-frontend-error`) + `core:event:allow-listen/unlisten`. Sin
-  permisos de ventana, archivos, shell ni red.
+  permisos de ventana, archivos, shell ni red. Desde v0.2.0 (E2) existen además `get_settings` y
+  `set_setting`, permitidos solo a la ventana `settings` (`capabilities/settings.json`, que se crea en E3);
+  Rust valida y sanea y es la única fuente de verdad; evento `settings://changed`.
 - **Bandeja → motor**: `Cmd::{Hidden, TogglePause, ToggleFollow, GeometryChanged, …}` (no bloqueante).
   El menú se actualiza desde la vista del motor mediante `run_on_main_thread` (el hilo del motor nunca
   toca el menú).

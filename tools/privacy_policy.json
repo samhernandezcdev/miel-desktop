@@ -10,9 +10,18 @@
         "allow-get-display-prefs",
         "allow-report-frontend-error"
       ]
+    },
+    "settings.json": {
+      "windows": ["settings"],
+      "permissions": [
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
+        "allow-get-settings",
+        "allow-set-setting"
+      ]
     }
   },
-  "app_permission_files": ["get_view", "get_display_prefs", "report_frontend_error"],
+  "app_permission_files": ["get_view", "get_display_prefs", "report_frontend_error", "get_settings", "set_setting"],
   "windows_features": [
     "Win32_Foundation",
     "Win32_UI_Shell",

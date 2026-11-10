@@ -19,7 +19,10 @@ SHA256SUMS.txt
 # Datos locales que nunca deben publicarse
 EBWebView/
 settings.json
+# ...salvo la capability de la ventana de ajustes (código fuente, no datos de la persona)
+!/src-tauri/capabilities/settings.json
 settings.corrupt-*.json
+settings.v*.bak.json
 frontend-errors.log
 .env
 .env.*

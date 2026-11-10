@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Permisos de la ventana de ajustes (se crea en E3; hasta entonces no existe): escuchar el evento de cambio y leer/cambiar preferencias. Solo esta ventana; `main` no los tiene.",
+  "windows": ["settings"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-settings",
+    "allow-set-setting"
+  ]
+}

@@ -2,7 +2,13 @@ fn main() {
     // Los comandos propios deben declararse para poder exigir permisos explícitos (mínimo privilegio).
     tauri_build::try_build(
         tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&["get_view", "get_display_prefs", "report_frontend_error"])),
+            .app_manifest(tauri_build::AppManifest::new().commands(&[
+                "get_view",
+                "get_display_prefs",
+                "report_frontend_error",
+                "get_settings",
+                "set_setting",
+            ])),
     )
     .expect("fallo en tauri-build");
 

@@ -14,7 +14,7 @@ pub mod windows_probe;
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::{Manager, RunEvent, WebviewWindow, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WebviewWindow, WindowEvent};
 
 use lifecycle::Lifecycle;
 use mascot::engine::{Cmd, Engine, EngineConfig};
@@ -51,6 +51,33 @@ struct DisplayPrefs {
 fn get_display_prefs(store: tauri::State<'_, Arc<SettingsStore>>) -> DisplayPrefs {
     let s = store.get();
     DisplayPrefs { pet_size: s.pet_size, reduced_motion: s.reduced_motion }
+}
+
+/// E2 · Lee las preferencias completas (la ventana de ajustes llega en E3; hoy solo la capability
+/// `settings`, limitada a esa ventana, puede llamarlo: `main` no tiene el permiso).
+#[tauri::command]
+fn get_settings(store: tauri::State<'_, Arc<SettingsStore>>) -> Settings {
+    store.get()
+}
+
+/// E2 · Cambia UN ajuste. Rust es la única fuente de verdad: valida clave y tipo, sanea rangos y
+/// devuelve las preferencias aplicadas; si hubo un cambio real, emite `settings://changed` a la
+/// ventana `settings`. El frontend no decide nada. No altera el motor (los interruptores nuevos aún
+/// no tienen efecto; el resto se aplica al reiniciar, como en v0.1.0).
+#[tauri::command]
+fn set_setting(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, Arc<SettingsStore>>,
+    key: String,
+    value: serde_json::Value,
+) -> Result<Settings, String> {
+    let (applied, changed) = store.set_setting(&key, &value).map_err(|e| e.to_string())?;
+    if changed {
+        if let Err(e) = app.emit_to("settings", settings::EVENT_CHANGED, &applied) {
+            eprintln!("[miel] no se pudo emitir el cambio de ajustes: {e}");
+        }
+    }
+    Ok(applied)
 }
 
 /// Informe de un error del frontend (React/WebView2). Se sanea, se limita en cantidad y tamaño y
@@ -152,6 +179,9 @@ fn describe_outcome(o: &LoadOutcome) -> Option<String> {
         LoadOutcome::Loaded { invalid, clamped } => {
             Some(format!("campos inválidos restablecidos {invalid:?}, campos ajustados {clamped:?}"))
         }
+        LoadOutcome::Migrated { backup, invalid, clamped } => Some(format!(
+            "esquema 1 → 2 (se reescribe en el primer guardado; copia: {backup:?}); campos inválidos {invalid:?}, ajustados {clamped:?}"
+        )),
         LoadOutcome::Corrupt { backup } => {
             Some(format!("archivo corrupto; se usan valores por defecto (copia: {backup:?})"))
         }
@@ -182,7 +212,13 @@ pub fn run() {
         }))
         .manage(Lifecycle::default())
         .manage(lifecycle::WatchSlot::default())
-        .invoke_handler(tauri::generate_handler![get_view, get_display_prefs, report_frontend_error])
+        .invoke_handler(tauri::generate_handler![
+            get_view,
+            get_display_prefs,
+            report_frontend_error,
+            get_settings,
+            set_setting
+        ])
         .setup(|app| {
             let win = app
                 .get_webview_window("main")
@@ -319,6 +355,8 @@ mod tests {
     fn corrupt_preferences_are_described_without_blocking_startup() {
         assert!(describe_outcome(&LoadOutcome::Corrupt { backup: None }).is_some());
         assert!(describe_outcome(&LoadOutcome::Missing).is_none());
+        let m = LoadOutcome::Migrated { backup: None, invalid: vec![], clamped: vec![] };
+        assert!(describe_outcome(&m).is_some(), "la migración se registra");
         assert!(describe_outcome(&LoadOutcome::Loaded { invalid: vec![], clamped: vec![] }).is_none());
     }
 }
