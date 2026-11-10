@@ -2,6 +2,7 @@
 //! guion temporal de órdenes para medir rendimiento sin automatizar la interfaz de Windows.
 //!
 //! `MIEL_DIAG_SCRIPT="pause@60,resume@120,hide@180,show@240,follow_off@300,follow_on@360"`
+//! (también `suppress`, `unsuppress` y `override`: simulan un episodio de supresión; E1b)
 //! (segundos desde el arranque). Sin la variable, no se crea ningún hilo.
 
 use std::time::{Duration, Instant};
@@ -24,6 +25,9 @@ pub fn parse_script(text: &str) -> Result<Vec<(u64, Cmd)>, String> {
             "show" => Cmd::Hidden(false),
             "follow_off" => Cmd::FollowEnabled(false),
             "follow_on" => Cmd::FollowEnabled(true),
+            "suppress" => Cmd::Suppressed(true),
+            "unsuppress" => Cmd::Suppressed(false),
+            "override" => Cmd::DndOverride,
             other => return Err(format!("orden desconocida {other:?}")),
         };
         out.push((secs, cmd));
@@ -78,6 +82,12 @@ mod tests {
             [(60, Cmd::Pause(true)), (120, Cmd::Pause(false)), (180, Cmd::Hidden(true)), (240, Cmd::Hidden(false))]
         );
         assert!(parse_script("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn parses_the_suppression_commands() {
+        let s = parse_script("suppress@10,override@20,unsuppress@30").unwrap();
+        assert_eq!(s, [(10, Cmd::Suppressed(true)), (20, Cmd::DndOverride), (30, Cmd::Suppressed(false))]);
     }
 
     #[test]

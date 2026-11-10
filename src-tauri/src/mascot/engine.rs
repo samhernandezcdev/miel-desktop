@@ -66,6 +66,14 @@ pub enum Cmd {
     /// Los avisos nativos de pantalla están instalados: ya no hace falta la revisión de
     /// seguridad al despertar (queda solo como respaldo si la instalación falla).
     NativeGeometryEvents,
+    /// Empieza (`true`) o termina (`false`) un episodio de supresión automática (E4). Al terminar se
+    /// limpia la anulación. **E1b: solo alcanzable desde pruebas y `diag`** (en producción nadie lo envía).
+    #[allow(dead_code)]
+    Suppressed(bool),
+    /// "Mostrar de todos modos": anula el episodio de supresión actual (si no hay ninguno en vigor, no
+    /// hace nada). **E1b: solo alcanzable desde pruebas y `diag`.**
+    #[allow(dead_code)]
+    DndOverride,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -262,8 +270,8 @@ impl Drop for Engine {
 /// Vista pública: estado de la FSM + mensaje visible. La versión es la suma de los contadores
 /// monótonos de ambos → sube con cualquier cambio observable de cualquiera de los dos.
 fn same_view(a: &View, b: &View) -> bool {
-    (a.behavior, a.expression, a.paused, a.hidden, a.follow_enabled, a.message)
-        == (b.behavior, b.expression, b.paused, b.hidden, b.follow_enabled, b.message)
+    (a.behavior, a.expression, a.paused, a.hidden, a.follow_enabled, a.message, a.suppressed, a.sleeping)
+        == (b.behavior, b.expression, b.paused, b.hidden, b.follow_enabled, b.message, b.suppressed, b.sleeping)
 }
 
 fn compose(fsm: &Fsm, talker: &Talker) -> View {
@@ -297,6 +305,8 @@ struct Worker<H: Host> {
     topology: Vec<(Rect, u64)>,
     last_emitted: View,
     native_events: bool,
+    /// Última visibilidad pedida a la ventana (empieza visible; la primera muestra la hace el ciclo de vida).
+    shown: bool,
 }
 
 impl<H: Host> Worker<H> {
@@ -331,6 +341,25 @@ impl<H: Host> Worker<H> {
             topology: Vec::new(),
             last_emitted,
             native_events: false,
+            shown: true,
+        }
+    }
+
+    /// Alinea el mensaje visible con `messages_allowed` (pausa, oculta, suprimida o dormida lo cancelan).
+    fn sync_talker(&mut self, now: Ms) -> bool {
+        self.talker.set_suspended(now, !self.fsm.messages_allowed())
+    }
+
+    /// Alinea la ventana con la visibilidad efectiva (oculta por la persona o suprimida). Al volver a
+    /// mostrarla relee monitores y reubica si la posición dejó de ser válida.
+    fn sync_visibility(&mut self) {
+        let visible = self.fsm.is_visible();
+        if visible != self.shown {
+            self.shown = visible;
+            self.host.set_visible(visible);
+            if visible {
+                self.on_geometry_changed();
+            }
         }
     }
 
@@ -411,23 +440,27 @@ impl<H: Host> Worker<H> {
         match cmd {
             Cmd::Pause(p) => {
                 let changed = self.fsm.set_paused(now, p);
-                self.talker.set_suspended(now, self.fsm.is_suspended()) | changed
+                self.sync_talker(now) | changed
             }
             Cmd::Hidden(h) => {
                 let changed = self.fsm.set_hidden(now, h);
-                if changed {
-                    self.host.set_visible(!h);
-                    if !h {
-                        // al mostrar: relee monitores y reubica si la posición dejó de ser válida
-                        self.on_geometry_changed();
-                    }
-                }
-                self.talker.set_suspended(now, self.fsm.is_suspended()) | changed
+                self.sync_visibility(); // al mostrar: relee monitores y reubica si hace falta
+                self.sync_talker(now) | changed
+            }
+            Cmd::Suppressed(s) => {
+                let changed = self.fsm.set_suppressed(now, s);
+                self.sync_visibility();
+                self.sync_talker(now) | changed
+            }
+            Cmd::DndOverride => {
+                let changed = self.fsm.set_dnd_override(now);
+                self.sync_visibility();
+                self.sync_talker(now) | changed
             }
             Cmd::FollowEnabled(e) => self.fsm.set_follow_enabled(now, &mut self.rng, e),
             Cmd::TogglePause => {
                 let changed = self.fsm.toggle_paused(now);
-                self.talker.set_suspended(now, self.fsm.is_suspended()) | changed
+                self.sync_talker(now) | changed
             }
             Cmd::ToggleFollow => self.fsm.toggle_follow(now, &mut self.rng),
             Cmd::NativeGeometryEvents => {
@@ -1094,6 +1127,8 @@ mod tests {
             hidden: false,
             follow_enabled: true,
             message: Some(super::super::messages::MessageView { id: "rest.little", text: "Voy a descansar un ratito." }),
+            suppressed: false,
+            sleeping: false,
         };
         let j = serde_json::to_value(v).unwrap();
         assert_eq!(j["message"]["id"], "rest.little");
@@ -1528,6 +1563,103 @@ mod tests {
         let host = Fake::new();
         let e = Engine::spawn(host.clone(), follow_cfg());
         assert!(wait_until(|| e.view().behavior == Behavior::Follow));
+        e.shutdown();
+    }
+
+    // ---- E1b: supresión (alcanzable solo desde pruebas y diag) ----
+
+    #[test]
+    fn suppression_hides_and_restores_the_window_through_the_engine() {
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), quiet_cfg(), clock);
+        sleep(Duration::from_millis(60));
+        e.send(Cmd::Suppressed(true));
+        assert!(wait_until(|| !host.visible.load(Ordering::SeqCst)), "suprimida: ventana oculta");
+        assert!(e.view().suppressed && !e.view().hidden, "hidden conserva su significado de v0.1.0");
+        e.send(Cmd::Suppressed(false));
+        assert!(wait_until(|| host.visible.load(Ordering::SeqCst)), "fin del episodio: vuelve a mostrarse");
+        assert!(!e.view().suppressed);
+        e.shutdown();
+    }
+
+    #[test]
+    fn show_anyway_overrides_the_episode_and_the_next_episode_suppresses_again() {
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), quiet_cfg(), clock);
+        e.send(Cmd::Suppressed(true));
+        assert!(wait_until(|| !host.visible.load(Ordering::SeqCst)));
+        e.send(Cmd::DndOverride);
+        assert!(wait_until(|| host.visible.load(Ordering::SeqCst)), "anulada: se muestra");
+        assert!(!e.view().suppressed, "la vista ya no marca supresión en vigor");
+        let calls = host.visible_calls.load(Ordering::SeqCst);
+        e.send(Cmd::Suppressed(false)); // fin del episodio: limpia la anulación, ya estaba visible
+        sleep(Duration::from_millis(80));
+        assert_eq!(host.visible_calls.load(Ordering::SeqCst), calls, "sin llamadas de ventana redundantes");
+        e.send(Cmd::Suppressed(true));
+        assert!(wait_until(|| !host.visible.load(Ordering::SeqCst)), "episodio nuevo: vuelve a suprimir");
+        e.shutdown();
+    }
+
+    #[test]
+    fn show_with_hidden_and_active_suppression_overrides_and_keeps_pause() {
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), quiet_cfg(), clock);
+        e.send(Cmd::Pause(true));
+        e.send(Cmd::Hidden(true));
+        e.send(Cmd::Suppressed(true));
+        assert!(wait_until(|| e.view().hidden && e.view().suppressed));
+        e.send(Cmd::Hidden(false)); // "Mostrar"
+        assert!(wait_until(|| host.visible.load(Ordering::SeqCst)));
+        let v = e.view();
+        assert!(!v.hidden && v.paused && !v.suppressed, "quita hidden, anula el episodio y no toca paused: {v:?}");
+        e.shutdown();
+    }
+
+    #[test]
+    fn suppression_commands_without_an_episode_change_nothing_and_emit_nothing() {
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), quiet_cfg(), clock);
+        let before = e.view();
+        e.send(Cmd::DndOverride); // 8b: no existe sin supresión
+        e.send(Cmd::Suppressed(false));
+        sleep(Duration::from_millis(150));
+        assert_eq!(e.view(), before);
+        assert!(host.views.lock().unwrap().is_empty(), "same_view evita emisiones extra");
+        assert_eq!(host.visible_calls.load(Ordering::SeqCst), 0);
+        e.shutdown();
+    }
+
+    #[test]
+    fn suppression_cancels_the_visible_message_and_it_does_not_come_back() {
+        let host = Fake::new();
+        let e = Engine::spawn(host.clone(), talk_cfg(0, 600_000, 20));
+        sleep(Duration::from_millis(250));
+        assert!(e.view().message.is_some(), "mensaje visible al entrar en Rest");
+        e.send(Cmd::Suppressed(true));
+        assert!(wait_until(|| e.view().message.is_none()), "suprimir cancela el mensaje");
+        e.send(Cmd::Suppressed(false));
+        sleep(Duration::from_millis(100));
+        assert!(e.view().message.is_none(), "no vuelve por sí solo");
+        e.shutdown();
+    }
+
+    #[test]
+    fn a_suppressed_engine_does_not_wake_up_by_itself() {
+        // plazos de Idle muy cortos: si siguiera corriendo, decidiría algo y pediría el cursor
+        let host = Fake::new();
+        let clock = Arc::new(super::super::clock::FakeClock::new(0));
+        let e = Engine::spawn_with_clock(host.clone(), follow_cfg(), clock.clone());
+        e.send(Cmd::Suppressed(true));
+        assert!(wait_until(|| e.view().suppressed));
+        let views = host.views.lock().unwrap().len();
+        clock.advance(10_000);
+        sleep(Duration::from_millis(300));
+        assert_eq!(host.views.lock().unwrap().len(), views, "suprimida: sin plazos, sin vistas nuevas");
+        assert_eq!(host.calls(), 0, "y sin consultar el cursor");
         e.shutdown();
     }
 }

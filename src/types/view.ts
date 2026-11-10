@@ -31,4 +31,11 @@ export interface MascotView {
   followEnabled: boolean;
   /** Mensaje visible (o null). Rust decide cuándo aparece y cuándo termina. */
   message: BubbleMessage | null;
+  /**
+   * Supresión automática en vigor (p. ej. No molestar). Aditivo (v0.2.0): opcional, ausente = `false`
+   * (una vista de v0.1.0 no lo trae). React no lo usa todavía.
+   */
+  suppressed?: boolean;
+  /** Miel duerme. Aditivo (v0.2.0): opcional, ausente = `false`. React no lo usa todavía. */
+  sleeping?: boolean;
 }

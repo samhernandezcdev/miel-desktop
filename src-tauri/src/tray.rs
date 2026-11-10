@@ -70,6 +70,23 @@ pub fn menu_model(v: &View) -> MenuModel {
     }
 }
 
+/// E1b — modelo ampliado, SOLO modelo: el menú real todavía no tiene estos elementos (los añade E4).
+/// Mostrar/Ocultar siguen reflejando únicamente `hidden` (`base`); la supresión automática tiene su
+/// propia acción.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuppressionMenuModel {
+    pub base: MenuModel,
+    /// "Mostrar de todos modos" estaría disponible mientras haya supresión en vigor, esté o no la
+    /// ventana oculta por la persona (plan §4.3, D7).
+    pub show_anyway_available: bool,
+    /// Ayuda de la bandeja "Miel está oculta por No molestar" mientras la supresión esté en vigor.
+    pub suppression_hint: bool,
+}
+
+pub fn suppression_menu_model(v: &View) -> SuppressionMenuModel {
+    SuppressionMenuModel { base: menu_model(v), show_anyway_available: v.suppressed, suppression_hint: v.suppressed }
+}
+
 /// Destino de las actualizaciones del menú (implementado por los elementos reales y por mocks).
 pub trait MenuSink {
     fn set_show_enabled(&self, enabled: bool);
@@ -278,6 +295,8 @@ mod tests {
             hidden,
             follow_enabled: follow,
             message: None,
+            suppressed: false,
+            sleeping: false,
         }
     }
 
@@ -407,5 +426,25 @@ mod tests {
         dispatch(TrayAction::Quit, &ctl);
         assert_eq!(*ctl.quits.borrow(), 1);
         assert_eq!(ctl.sent.borrow().len(), 6, "Cerrar no envía órdenes de comportamiento");
+    }
+
+    #[test]
+    fn suppression_model_extends_without_changing_show_hide_semantics() {
+        let mut v = view(false, false, true);
+        let m = suppression_menu_model(&v);
+        assert_eq!(m.base, menu_model(&v));
+        assert!(!m.show_anyway_available && !m.suppression_hint, "producción: nunca hay supresión");
+        // supresión en vigor con la ventana oculta por la supresión (no por la persona)
+        v.suppressed = true;
+        let m = suppression_menu_model(&v);
+        assert!(m.show_anyway_available && m.suppression_hint);
+        assert_eq!((m.base.show_enabled, m.base.hide_enabled), (false, true), "Mostrar/Ocultar reflejan solo `hidden`");
+        // supresión + oculta por la persona: sigue disponible "Mostrar de todos modos" y Mostrar está habilitado
+        v.hidden = true;
+        let m = suppression_menu_model(&v);
+        assert!(m.show_anyway_available);
+        assert_eq!((m.base.show_enabled, m.base.hide_enabled), (true, false));
+        // el modelo real del menú no cambia con la supresión (no hay elementos nuevos)
+        assert_eq!(menu_model(&v), menu_model(&View { suppressed: false, ..v }));
     }
 }

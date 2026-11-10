@@ -366,3 +366,21 @@ Notas: (1) con contadores de 32 bits el delta válido nunca pasa de 2^31 ms (≈
 Lectura: `e1a` sale +7 % (Idle) y +9 % (Rest) sobre `base` con el mismo signo en las 4 repeticiones, pero la calibración A/A con binarios **idénticos** da diferencias de −9 % a +10 % de signo opuesto: **la resolución de este método es ≈ ±10 %**, y la diferencia queda dentro de ella. Conclusión: no se detecta empeoramiento; no se puede afirmar una igualdad más fina. Los niveles absolutos varían entre sesiones (Idle de `base`: 6,57 en la tanda `e1a` frente a 5,43 en la A/A y 5,30 en E0b; la reacción, que E1a no toca, también subió ≈ 25 % en la tanda `e1a`): comparar solo dentro de una misma tanda. Paused y Hidden siguen en el suelo.
 
 Incidencias: (a) una primera tanda se **descartó** (guardada como `v020-e1a-run1-descartada-*`): el equipo se suspendió durante la noche a mitad de la medición y una repetición `base` se cortó a los 20 s; (b) `tools/e0b/prodrun.ps1` se amplió para sembrar un `settings.json` temporal si no existe (Miel estaba desinstalada) y eliminarlo al terminar; al final, `settings.json` quedó ausente como al empezar; (c) el intento de evitar la suspensión con `SetThreadExecutionState` falló en la tanda `e1a` por un error de conversión de tipo (esa tanda terminó sin suspensiones de todos modos) y funcionó en la A/A; (d) los binarios de medición incluyen `diag` y se compilaron en un directorio temporal, ya eliminado. Sleep (`sleepy`) sigue sin figura propia (1–5 muestras por variante).
+
+
+## v0.2.0 · E1b: infraestructura de supresión, sin detección automática (2026-11-10)
+
+Cambios (sin comportamiento nuevo: en producción `suppressed` y `sleeping` son siempre `false`, y nada envía `Cmd::Suppressed`/`Cmd::DndOverride`):
+- `mascot/state.rs`: banderas `suppressed`, `dnd_override` y `sleeping` en la FSM; funciones puras `suppression_active`, `visible`, `running` y `messages_allowed`; `is_suspended()` = `!running` (con `suppressed=false` es exactamente `paused || hidden`); `View` gana `suppressed` (supresión **en vigor**, es decir, sin anular) y `sleeping`, aditivos. `hidden`/`paused` conservan su significado. Mostrar con `hidden=true` y supresión en vigor quita `hidden` **y** anula el episodio; "Mostrar de todos modos" solo actúa con supresión en vigor. Dormir se presenta como Rest estable (`sleepy` → `resting`), congela (no descarta) los plazos propios y no consume el RNG.
+- `mascot/engine.rs`: `Cmd::Suppressed(bool)` y `Cmd::DndOverride`; la visibilidad de la ventana y la cancelación de mensajes salen de `visible`/`messages_allowed`; `same_view` incluye los campos nuevos.
+- `diag.rs`: `suppress`, `unsuppress` y `override` en `MIEL_DIAG_SCRIPT`. `host.rs`: el registro diag muestra los campos nuevos.
+- `tray.rs`: `suppression_menu_model` (solo modelo, probado). `MenuModel`/`menu_model` y el menú real **no cambian**.
+- `src/types/view.ts`: `suppressed?` y `sleeping?` opcionales (ausentes = `false`).
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo test` | 201 + 5 (antes 173 + 5): +28 nuevas (20 de `state`, 6 del motor, 1 de `tray`, 1 de `diag`). Aserciones previas sin modificar; solo se adaptaron los 4 constructores literales de `View` (`messages.rs`, `tray.rs`, `tests/tray_menu.rs`, test de serialización de `engine.rs`) con los dos campos nuevos |
+| `vitest` | 71/71 (antes 69: +2 de compatibilidad de la vista de v0.1.0) |
+| `tsc` / `check:dist` / `check_privacy.py` (+autotest) / `licenses:check` / clippy `-D warnings` | OK / OK / OK / OK / sin avisos |
+
+Cubierto por pruebas de tabla: las 16 combinaciones `hidden × paused × suppressed × sleeping` (visible, corre, mensajes, expresión, `next_wakeup`, avance del reloj y recuperación con rebase de plazos), equivalencia de `is_suspended` con `paused || hidden` en todo el espacio, y los casos 1–9 de §5.2 (incluidos 8 y 8b). El caso 10 (errores consecutivos de la sonda) corresponde al detector de E4 y no existe todavía. Sin medición de CPU (no toca lo visual ni la temporización: `Fsm` solo añade ramas con las banderas a `false`).

@@ -28,6 +28,21 @@ describe("reduceView", () => {
     expect(reduceView(v(4), v(4, "happy"))?.expression).toBe("idle");
     expect(reduceView(v(4), v(2, "happy"))?.version).toBe(4);
   });
+
+  it("una vista de v0.1.0 (sin suppressed ni sleeping) se acepta y equivale a false", () => {
+    const old = JSON.parse(
+      '{"version":5,"behavior":"rest","expression":"sleepy","paused":false,"hidden":false,"followEnabled":true,"message":null}',
+    ) as MascotView;
+    expect(reduceView(null, old)).toBe(old);
+    expect(old.suppressed ?? false).toBe(false);
+    expect(old.sleeping ?? false).toBe(false);
+  });
+
+  it("los campos nuevos no alteran el orden por versión", () => {
+    const neu: MascotView = { ...v(6), suppressed: true, sleeping: true };
+    expect(reduceView(v(5), neu)).toBe(neu);
+    expect(reduceView(neu, v(5))).toBe(neu);
+  });
 });
 
 describe("subscribeView", () => {

@@ -328,7 +328,7 @@ mod tests {
     use super::*;
 
     fn view(b: Behavior, e: Expression) -> View {
-        View { version: 0, behavior: b, expression: e, paused: false, hidden: false, follow_enabled: true, message: None }
+        View { version: 0, behavior: b, expression: e, paused: false, hidden: false, follow_enabled: true, message: None, suppressed: false, sleeping: false }
     }
 
     fn cfg(cooldown: Ms) -> TalkerConfig {

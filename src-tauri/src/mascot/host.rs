@@ -80,13 +80,15 @@ impl Host for TauriHost {
     fn emit_view(&self, view: &View) {
         if crate::DIAG {
             eprintln!(
-                "[miel] t={} vista v{} {:?}/{:?} paused={} hidden={} follow={} msg={:?}",
+                "[miel] t={} vista v{} {:?}/{:?} paused={} hidden={} suppressed={} sleeping={} follow={} msg={:?}",
                 unix_ms(),
                 view.version,
                 view.behavior,
                 view.expression,
                 view.paused,
                 view.hidden,
+                view.suppressed,
+                view.sleeping,
                 view.follow_enabled,
                 view.message.map(|m| m.id)
             );

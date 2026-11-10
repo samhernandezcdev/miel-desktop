@@ -17,6 +17,8 @@ fn view(paused: bool, hidden: bool, follow: bool) -> View {
         hidden,
         follow_enabled: follow,
         message: None,
+        suppressed: false,
+        sleeping: false,
     }
 }
 

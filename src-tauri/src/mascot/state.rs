@@ -7,6 +7,11 @@
 //!
 //! `paused` y `hidden` son banderas ortogonales que SUSPENDEN todo (prioridad máxima): congelan
 //! los temporizadores y al reanudar se continúa con el tiempo restante.
+//!
+//! Infraestructura de supresión (E1b; sin detección automática todavía, en producción siempre falsas):
+//! `suppressed` (supresión automática, p. ej. No molestar), `dnd_override` (anulación del episodio) y
+//! `sleeping` (comportamiento, no suspensión). Ver `visible`, `running` y `messages_allowed`, y
+//! `docs/plan/v0.2.0.md` §4.1 y §5.
 
 use serde::Serialize;
 
@@ -75,6 +80,26 @@ impl Default for Timings {
     }
 }
 
+/// Supresión automática EN VIGOR: hay un episodio (`suppressed`) y la persona no lo ha anulado.
+pub fn suppression_active(suppressed: bool, dnd_override: bool) -> bool {
+    suppressed && !dnd_override
+}
+
+/// ¿Se ve la ventana? No si la persona la ocultó (`hidden`) ni si hay supresión en vigor.
+pub fn visible(hidden: bool, suppressed: bool, dnd_override: bool) -> bool {
+    !hidden && !suppression_active(suppressed, dnd_override)
+}
+
+/// ¿Avanza la FSM y planifica el motor? Visible y no pausada.
+pub fn running(hidden: bool, paused: bool, suppressed: bool, dnd_override: bool) -> bool {
+    visible(hidden, suppressed, dnd_override) && !paused
+}
+
+/// ¿Puede hablar Miel? Corriendo y despierta.
+pub fn messages_allowed(hidden: bool, paused: bool, suppressed: bool, dnd_override: bool, sleeping: bool) -> bool {
+    running(hidden, paused, suppressed, dnd_override) && !sleeping
+}
+
 /// Foto observable del estado; `version` crece con cada cambio observable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +113,11 @@ pub struct View {
     pub follow_enabled: bool,
     /// Mensaje visible (lo rellena el motor a partir del `Talker`; la FSM no sabe de mensajes).
     pub message: Option<MessageView>,
+    /// Supresión automática EN VIGOR (episodio sin anular). Aditivo: `hidden`/`paused` conservan el
+    /// significado de v0.1.0. En producción siempre `false` hasta E4.
+    pub suppressed: bool,
+    /// Miel duerme (comportamiento, no suspensión). Aditivo; en producción siempre `false` hasta E5.
+    pub sleeping: bool,
 }
 
 /// Tabla de transiciones válidas entre comportamientos.
@@ -129,9 +159,21 @@ pub struct Fsm {
     expression: Expression,
     paused: bool,
     hidden: bool,
+    /// Episodio de supresión automática (E4); anulable con `dnd_override`.
+    suppressed: bool,
+    /// Anulación del episodio actual ("Mostrar de todos modos" / Mostrar con supresión en vigor).
+    dnd_override: bool,
+    /// Sueño (E5): comportamiento visible como Rest estable; los plazos propios se congelan.
+    sleeping: bool,
+    /// Sueño: ya se muestra `resting` (pasó `rest_settle`).
+    sleep_resting: bool,
+    /// Sueño: instante en que `sleepy` pasa a `resting` (solo corre mientras `running`).
+    sleep_settle_at: Option<Ms>,
+    /// Sueño: tiempo restante hasta `resting` mientras está suspendida.
+    sleep_settle_rem: Option<Ms>,
     follow_enabled: bool,
     timers: Timers,
-    /// Tiempo restante congelado mientras está suspendido (paused || hidden).
+    /// Tiempo restante congelado mientras los plazos están detenidos (`!running` o `sleeping`).
     frozen: Option<(Ms, Option<Ms>)>,
     resume: Option<Resume>,
     last_follow_end: Option<Ms>,
@@ -149,6 +191,12 @@ impl Fsm {
             expression: Expression::Idle,
             paused: false,
             hidden: false,
+            suppressed: false,
+            dnd_override: false,
+            sleeping: false,
+            sleep_resting: false,
+            sleep_settle_at: None,
+            sleep_settle_rem: None,
             follow_enabled: true,
             timers: Timers { deadline: now + d, settle_at: None },
             frozen: None,
@@ -161,23 +209,60 @@ impl Fsm {
     }
 
     pub fn view(&self) -> View {
+        // Durmiendo, Miel se presenta como Rest estable (sleepy → resting); el comportamiento real
+        // (`self.behavior`) y sus plazos quedan congelados y se retoman al despertar.
+        let (behavior, expression) = if self.sleeping {
+            (Behavior::Rest, if self.sleep_resting { Expression::Resting } else { Expression::Sleepy })
+        } else {
+            (self.behavior, self.expression)
+        };
         View {
             version: self.version,
-            behavior: self.behavior,
-            expression: self.expression,
+            behavior,
+            expression,
             paused: self.paused,
             hidden: self.hidden,
             follow_enabled: self.follow_enabled,
             message: None,
+            suppressed: self.suppression_active(),
+            sleeping: self.sleeping,
         }
     }
 
+    /// Comportamiento EFECTIVO (el que se ve): Rest mientras duerme.
     pub fn behavior(&self) -> Behavior {
-        self.behavior
+        if self.sleeping {
+            Behavior::Rest
+        } else {
+            self.behavior
+        }
     }
 
+    pub fn suppression_active(&self) -> bool {
+        suppression_active(self.suppressed, self.dnd_override)
+    }
+
+    /// Ventana visible (ni oculta por la persona ni suprimida).
+    pub fn is_visible(&self) -> bool {
+        visible(self.hidden, self.suppressed, self.dnd_override)
+    }
+
+    /// El FSM avanza y el motor planifica.
+    pub fn is_running(&self) -> bool {
+        running(self.hidden, self.paused, self.suppressed, self.dnd_override)
+    }
+
+    pub fn is_sleeping(&self) -> bool {
+        self.sleeping
+    }
+
+    pub fn messages_allowed(&self) -> bool {
+        messages_allowed(self.hidden, self.paused, self.suppressed, self.dnd_override, self.sleeping)
+    }
+
+    /// `!running`; con `suppressed = false` es exactamente `paused || hidden` (v0.1.0).
     pub fn is_suspended(&self) -> bool {
-        self.paused || self.hidden
+        !self.is_running()
     }
 
     /// Alterna la pausa (atómico respecto al estado real: sin booleanos duplicados en la UI).
@@ -197,6 +282,9 @@ impl Fsm {
         if self.is_suspended() {
             return None;
         }
+        if self.sleeping {
+            return self.sleep_settle_at; // solo el paso sleepy → resting; Rest no vence por sí mismo
+        }
         Some(match self.timers.settle_at {
             Some(s) => s.min(self.timers.deadline),
             None => self.timers.deadline,
@@ -214,7 +302,49 @@ impl Fsm {
 
     pub fn set_hidden(&mut self, now: Ms, hidden: bool) -> bool {
         self.mutate(|s| {
+            let was_hidden = s.hidden;
             s.hidden = hidden;
+            // Mostrar con supresión en vigor: además de quitar `hidden`, anula el episodio actual.
+            if was_hidden && !hidden && s.suppression_active() {
+                s.dnd_override = true;
+            }
+            s.sync_suspension(now);
+        })
+    }
+
+    /// Empieza o termina un episodio de supresión. Al terminar se limpia la anulación.
+    pub fn set_suppressed(&mut self, now: Ms, suppressed: bool) -> bool {
+        self.mutate(|s| {
+            s.suppressed = suppressed;
+            if !suppressed {
+                s.dnd_override = false;
+            }
+            s.sync_suspension(now);
+        })
+    }
+
+    /// "Mostrar de todos modos": solo existe con supresión en vigor (si no, no hace nada). Anula el
+    /// episodio actual, quita `hidden` y deja `paused` intacto.
+    pub fn set_dnd_override(&mut self, now: Ms) -> bool {
+        self.mutate(|s| {
+            if s.suppression_active() {
+                s.dnd_override = true;
+                s.hidden = false;
+                s.sync_suspension(now);
+            }
+        })
+    }
+
+    /// Entra o sale del sueño. Los plazos propios se congelan (no se descartan) mientras duerme.
+    pub fn set_sleeping(&mut self, now: Ms, sleeping: bool) -> bool {
+        self.mutate(|s| {
+            if s.sleeping == sleeping {
+                return;
+            }
+            s.sleeping = sleeping;
+            s.sleep_resting = false;
+            s.sleep_settle_at = None;
+            s.sleep_settle_rem = sleeping.then_some(s.t.rest_settle);
             s.sync_suspension(now);
         })
     }
@@ -233,6 +363,14 @@ impl Fsm {
     pub fn step(&mut self, now: Ms, rng: &mut fastrand::Rng) -> bool {
         if self.is_suspended() {
             return false;
+        }
+        if self.sleeping {
+            return self.mutate(|s| {
+                if s.sleep_settle_at.is_some_and(|at| now >= at) {
+                    s.sleep_settle_at = None;
+                    s.sleep_resting = true;
+                }
+            });
         }
         self.mutate(|s| {
             if let Some(settle) = s.timers.settle_at {
@@ -254,8 +392,7 @@ impl Fsm {
         let before = self.view();
         f(self);
         let after = self.view();
-        let changed = (before.behavior, before.expression, before.paused, before.hidden, before.follow_enabled)
-            != (after.behavior, after.expression, after.paused, after.hidden, after.follow_enabled);
+        let changed = before != after;
         if changed {
             self.version += 1;
         }
@@ -263,7 +400,9 @@ impl Fsm {
     }
 
     fn sync_suspension(&mut self, now: Ms) {
-        match (self.is_suspended(), self.frozen) {
+        // Los plazos propios se detienen si no corre (pausa, oculta, suprimida) o si duerme.
+        let halted = self.is_suspended() || self.sleeping;
+        match (halted, self.frozen) {
             (true, None) => {
                 let rem = self.timers.deadline.saturating_sub(now);
                 let settle = self.timers.settle_at.map(|s| s.saturating_sub(now));
@@ -275,6 +414,14 @@ impl Fsm {
                 self.frozen = None;
             }
             _ => {}
+        }
+        // Reloj de presentación del sueño (sleepy → resting): corre solo durmiendo y corriendo.
+        if self.sleeping && !self.is_suspended() {
+            if let Some(rem) = self.sleep_settle_rem.take() {
+                self.sleep_settle_at = Some(now + rem);
+            }
+        } else if let Some(at) = self.sleep_settle_at.take() {
+            self.sleep_settle_rem = Some(at.saturating_sub(now));
         }
     }
 
@@ -716,5 +863,316 @@ mod tests {
         assert!((share(follow) - 0.50).abs() < 0.06, "follow {:.2}", share(follow));
         assert!((share(rest) - 0.25).abs() < 0.06, "rest {:.2}", share(rest));
         assert!((share(react) - 0.25).abs() < 0.06, "reaction {:.2} (follow={follow} rest={rest} react={react})", share(react));
+    }
+
+    // ---- E1b: infraestructura de supresión (suppressed / dnd_override / sleeping) ----
+
+    /// FSM en t=0 con las banderas pedidas aplicadas por la API pública.
+    fn with_flags(hidden: bool, paused: bool, suppressed: bool, sleeping: bool) -> (Fsm, fastrand::Rng) {
+        let mut r = rng();
+        let mut f = Fsm::new(timings(), 0, &mut r);
+        f.set_suppressed(0, suppressed);
+        f.set_sleeping(0, sleeping);
+        f.set_paused(0, paused);
+        f.set_hidden(0, hidden);
+        (f, r)
+    }
+
+    #[test]
+    fn pure_visibility_functions_cover_the_whole_space() {
+        for bits in 0..32u8 {
+            let (hidden, paused, suppressed, dnd_override, sleeping) =
+                (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0, bits & 16 != 0);
+            let active = suppressed && !dnd_override;
+            assert_eq!(suppression_active(suppressed, dnd_override), active);
+            assert_eq!(visible(hidden, suppressed, dnd_override), !hidden && !active);
+            assert_eq!(running(hidden, paused, suppressed, dnd_override), !hidden && !active && !paused);
+            assert_eq!(
+                messages_allowed(hidden, paused, suppressed, dnd_override, sleeping),
+                !hidden && !active && !paused && !sleeping
+            );
+            // equivalencia con v0.1.0: sin supresión en vigor, "no corre" == paused || hidden
+            if !active {
+                assert_eq!(!running(hidden, paused, suppressed, dnd_override), paused || hidden);
+            }
+        }
+    }
+
+    #[test]
+    fn is_suspended_equals_paused_or_hidden_when_not_suppressed_over_the_whole_space() {
+        for bits in 0..8u8 {
+            let (hidden, paused, sleeping) = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0);
+            let (f, _) = with_flags(hidden, paused, false, sleeping);
+            assert_eq!(f.is_suspended(), paused || hidden, "hidden={hidden} paused={paused} sleeping={sleeping}");
+            assert_eq!(f.is_running(), !(paused || hidden));
+        }
+        // también tras un episodio completo con anulación (override limpio al terminar)
+        let (mut f, _) = with_flags(false, false, true, false);
+        f.set_dnd_override(10);
+        f.set_suppressed(20, false);
+        assert!(!f.is_suspended());
+    }
+
+    /// Las 16 combinaciones hidden × paused × suppressed × sleeping (sin anulación) y sus invariantes (§5.1).
+    #[test]
+    fn matrix_of_16_combinations_keeps_every_invariant() {
+        for bits in 0..16u8 {
+            let (hidden, paused, suppressed, sleeping) = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0);
+            let tag = format!("hidden={hidden} paused={paused} suppressed={suppressed} sleeping={sleeping}");
+            let (mut f, mut r) = with_flags(hidden, paused, suppressed, sleeping);
+            let v = f.view();
+
+            // View.hidden / View.paused: exactamente los de v0.1.0
+            assert_eq!((v.hidden, v.paused), (hidden, paused), "{tag}");
+            assert_eq!((v.suppressed, v.sleeping), (suppressed, sleeping), "{tag}");
+            // visibilidad, ejecución y mensajes
+            let visible_ = !hidden && !suppressed;
+            let running_ = visible_ && !paused;
+            assert_eq!(f.is_visible(), visible_, "{tag}");
+            assert_eq!(f.is_running(), running_, "{tag}");
+            assert_eq!(f.is_suspended(), !running_, "{tag}");
+            assert_eq!(f.messages_allowed(), running_ && !sleeping, "{tag}");
+            // expresión: durmiendo, sleepy (aún sin pasar rest_settle) como Rest; si no, la de la FSM
+            if sleeping {
+                assert_eq!((v.behavior, v.expression), (Behavior::Rest, Expression::Sleepy), "{tag}");
+            } else {
+                assert_eq!((v.behavior, v.expression), (Behavior::Idle, Expression::Idle), "{tag}");
+            }
+            // próximo despertar: ninguno si no corre; durmiendo solo el paso sleepy→resting; si no, el plazo de Idle
+            let wake = f.next_wakeup();
+            match (running_, sleeping) {
+                (false, _) => assert_eq!(wake, None, "{tag}"),
+                (true, true) => assert_eq!(wake, Some(400), "{tag}"),
+                (true, false) => assert_eq!(wake, Some(1000), "{tag}"),
+            }
+            // avance del reloj muy por encima de todos los plazos
+            let version = f.view().version;
+            let changed = f.step(1_000_000, &mut r);
+            let after = f.view();
+            match (running_, sleeping) {
+                (false, _) => {
+                    assert!(!changed && after == v, "no corre → nada cambia: {tag}");
+                    assert_eq!(after.version, version, "{tag}");
+                }
+                (true, true) => {
+                    // Sleep es estable: solo pasa de sleepy a resting y NO sale por plazos de Rest
+                    assert_eq!((after.behavior, after.expression), (Behavior::Rest, Expression::Resting), "{tag}");
+                    assert!(!f.step(2_000_000, &mut r), "sin más transiciones: {tag}");
+                    assert_eq!(f.next_wakeup(), None, "{tag}");
+                }
+                (true, false) => assert!(changed && after.behavior != Behavior::Idle, "decide al vencer Idle: {tag}"),
+            }
+        }
+    }
+
+    /// Recuperación (§5.1): al quedar libres todas las causas, los plazos congelados se rebasan al instante de
+    /// la recuperación y la FSM vuelve a lo que estaba, sin haber destruido nada.
+    #[test]
+    fn matrix_recovery_rebases_the_frozen_deadlines() {
+        for bits in 1..16u8 {
+            let (hidden, paused, suppressed, sleeping) = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0);
+            let tag = format!("hidden={hidden} paused={paused} suppressed={suppressed} sleeping={sleeping}");
+            let (mut f, mut r) = with_flags(hidden, paused, suppressed, sleeping);
+            f.step(500_000, &mut r); // el tiempo pasa mientras tanto (solo cambia si corre y no duerme)
+            let t = 600_000;
+            f.set_suppressed(t, false);
+            f.set_sleeping(t, false);
+            f.set_paused(t, false);
+            f.set_hidden(t, false);
+            let v = f.view();
+            assert!(f.is_running() && !v.sleeping && !v.suppressed, "{tag}");
+            assert_eq!((v.behavior, v.expression), (Behavior::Idle, Expression::Idle), "{tag}");
+            assert_eq!(f.next_wakeup(), Some(t + 1000), "el Idle congelado (1000 ms) se rebasa a la recuperación: {tag}");
+        }
+    }
+
+    // §5.2 casos aparte
+
+    #[test]
+    fn case1_end_of_suppression_after_the_idle_threshold_reappears_asleep() {
+        let (mut f, _) = with_flags(false, false, true, false);
+        f.set_sleeping(100, true); // el motor recalcula el sueño ANTES de mostrar
+        assert!(!f.is_visible() && f.view().sleeping);
+        f.set_suppressed(200, false);
+        let v = f.view();
+        assert!(f.is_visible() && f.is_running() && v.sleeping && !v.suppressed);
+        assert_eq!((v.behavior, v.expression), (Behavior::Rest, Expression::Sleepy));
+        assert!(!f.messages_allowed());
+    }
+
+    #[test]
+    fn case2_resuming_after_the_threshold_recomputes_sleep_immediately() {
+        let (mut f, _) = with_flags(false, true, false, false);
+        f.set_sleeping(1000, true); // reconsulta al volver a running...
+        f.set_paused(1000, false); // ...y se reanuda ya dormida
+        let v = f.view();
+        assert!(!v.paused && v.sleeping);
+        assert_eq!(v.behavior, Behavior::Rest);
+        assert_eq!(f.next_wakeup(), Some(1400), "el reloj sleepy→resting corre desde la reanudación");
+    }
+
+    #[test]
+    fn case3_show_anyway_during_suppression_keeps_dnd_on_for_the_episode() {
+        let (mut f, _) = with_flags(false, false, true, false);
+        assert!(!f.is_visible());
+        assert!(f.set_dnd_override(10));
+        let v = f.view();
+        assert!(f.is_visible() && f.is_running() && !v.suppressed && !v.hidden);
+        assert!(f.suppressed && f.dnd_override, "el episodio sigue marcado; solo se anula");
+    }
+
+    #[test]
+    fn case4_end_of_episode_clears_the_override_and_a_new_episode_suppresses_again() {
+        let (mut f, _) = with_flags(false, false, true, false);
+        f.set_dnd_override(10);
+        f.set_suppressed(20, false);
+        assert!(!f.dnd_override && !f.suppressed && f.is_visible());
+        f.set_suppressed(30, true);
+        assert!(f.view().suppressed && !f.is_visible(), "episodio nuevo: vuelve a suprimir");
+    }
+
+    #[test]
+    fn case5_hiding_while_asleep_then_showing_recomputes() {
+        let (mut f, mut r) = with_flags(false, false, false, true);
+        f.set_hidden(50, true);
+        assert!(!f.is_visible() && f.view().sleeping && f.next_wakeup().is_none());
+        assert!(!f.step(10_000, &mut r), "oculta: nada avanza");
+        f.set_hidden(20_000, false);
+        let v = f.view();
+        assert!(v.sleeping && !v.hidden && f.is_running());
+        assert_eq!(f.next_wakeup(), Some(20_350), "sleepy→resting: quedaban 350 ms al ocultar");
+    }
+
+    #[test]
+    fn case6_resuming_with_suppression_still_active_does_not_show() {
+        let (mut f, _) = with_flags(false, true, true, false);
+        f.set_paused(100, false);
+        assert!(!f.is_visible() && !f.is_running() && f.view().suppressed, "sigue suprimida");
+        assert!(f.next_wakeup().is_none());
+        // salvo anulación
+        f.set_dnd_override(200);
+        assert!(f.is_visible() && f.is_running());
+    }
+
+    #[test]
+    fn case7_override_does_not_clear_a_manual_pause() {
+        let (mut f, _) = with_flags(false, true, true, false);
+        f.set_dnd_override(100);
+        let v = f.view();
+        assert!(v.paused && f.is_visible() && !f.is_running(), "visible pero pausada");
+    }
+
+    #[test]
+    fn case8_show_with_hidden_and_active_suppression_also_overrides_the_episode() {
+        // "Mostrar" (set_hidden(false)) con hidden=true y supresión en vigor
+        let (mut f, _) = with_flags(true, true, true, false);
+        f.set_hidden(100, false);
+        let v = f.view();
+        assert!(!v.hidden && v.paused, "quita hidden y deja paused intacto");
+        assert!(f.is_visible() && !v.suppressed && f.dnd_override, "anulación del episodio activada");
+        assert!(f.suppressed, "DND automático no se desactiva");
+        f.set_suppressed(200, false); // fin del episodio
+        assert!(!f.dnd_override && f.is_visible());
+        // "Mostrar de todos modos" parte del mismo estado y deja lo mismo
+        let (mut g, _) = with_flags(true, true, true, false);
+        assert!(g.set_dnd_override(100));
+        assert_eq!((g.view().hidden, g.view().paused, g.view().suppressed), (false, true, false));
+        assert!(g.dnd_override);
+    }
+
+    #[test]
+    fn case8b_show_with_hidden_and_no_suppression_only_clears_hidden() {
+        let (mut f, _) = with_flags(true, false, false, false);
+        assert!(!f.set_dnd_override(50), "'Mostrar de todos modos' no existe sin supresión: no hace nada");
+        assert!(f.view().hidden && !f.dnd_override);
+        f.set_hidden(100, false);
+        assert!(!f.view().hidden && !f.dnd_override && !f.suppressed);
+    }
+
+    #[test]
+    fn case9_turning_dnd_off_during_an_episode_unsuppresses_immediately() {
+        let (mut f, _) = with_flags(false, false, true, false);
+        assert!(f.set_suppressed(10, false));
+        assert!(f.is_visible() && !f.view().suppressed);
+        assert!(!f.set_suppressed(11, false), "idempotente: sin cambio ni versión nueva");
+    }
+
+    #[test]
+    fn unused_flags_do_not_bump_the_version() {
+        let (mut f, _) = with_flags(false, false, false, false);
+        let v0 = f.view().version;
+        assert!(!f.set_suppressed(1, false) && !f.set_sleeping(1, false) && !f.set_dnd_override(1));
+        assert_eq!(f.view().version, v0);
+    }
+
+    // §4.2 Sleep estable
+
+    #[test]
+    fn sleep_holds_resting_and_does_not_leave_by_rest_deadlines() {
+        let (mut f, mut r) = with_flags(false, false, false, false);
+        f.set_sleeping(10, true);
+        assert_eq!(f.view().expression, Expression::Sleepy);
+        f.step(409, &mut r);
+        assert_eq!(f.view().expression, Expression::Sleepy);
+        f.step(410, &mut r);
+        let v = f.view();
+        assert_eq!((v.behavior, v.expression, v.sleeping), (Behavior::Rest, Expression::Resting, true));
+        let version = v.version;
+        // muy por encima del plazo de Rest (2000) y de Idle (1000): sigue igual
+        assert!(!f.step(10_000_000, &mut r));
+        assert_eq!(f.view().version, version);
+        assert_eq!(f.behavior(), Behavior::Rest);
+    }
+
+    #[test]
+    fn sleep_does_not_consume_the_rng() {
+        let (mut f, mut r) = with_flags(false, false, false, true);
+        let mut twin = r.clone();
+        for t in [500, 5_000, 50_000, 5_000_000] {
+            f.step(t, &mut r);
+        }
+        assert_eq!(r.u64(..), twin.u64(..), "dormida no sortea nada");
+    }
+
+    #[test]
+    fn waking_restores_the_real_behavior_with_its_remaining_time() {
+        let mut r = rng();
+        let mut f = Fsm::new(timings(), 0, &mut r);
+        f.enter(Behavior::Follow, 0, &mut r); // Follow de 500 ms
+        f.set_sleeping(100, true); // quedaban 400
+        assert_eq!(f.behavior(), Behavior::Rest, "efectivo: Rest");
+        f.step(100_000, &mut r);
+        assert_eq!(f.behavior(), Behavior::Rest);
+        f.set_sleeping(9_000, false);
+        assert_eq!(f.behavior(), Behavior::Follow);
+        assert_eq!(f.next_wakeup(), Some(9_400));
+        assert!(!f.view().sleeping);
+    }
+
+    #[test]
+    fn pausing_while_asleep_freezes_the_sleepy_to_resting_clock() {
+        let (mut f, mut r) = with_flags(false, false, false, false);
+        f.set_sleeping(0, true); // resting a los 400
+        f.set_paused(100, true); // quedaban 300
+        assert!(f.next_wakeup().is_none());
+        f.set_paused(10_000, false);
+        assert_eq!(f.next_wakeup(), Some(10_300));
+        assert!(!f.step(10_299, &mut r));
+        assert!(f.step(10_300, &mut r));
+        assert_eq!(f.view().expression, Expression::Resting);
+    }
+
+    #[test]
+    fn view_json_keeps_the_v0_1_0_fields_and_adds_the_new_ones() {
+        let (f, _) = with_flags(false, true, false, false);
+        let j = serde_json::to_value(f.view()).unwrap();
+        // campos de v0.1.0, con los mismos nombres y valores
+        for k in ["version", "behavior", "expression", "paused", "hidden", "followEnabled", "message"] {
+            assert!(j.get(k).is_some(), "falta {k}");
+        }
+        assert_eq!((j["paused"].as_bool(), j["hidden"].as_bool()), (Some(true), Some(false)));
+        // campos nuevos, aditivos y falsos
+        assert_eq!((j["suppressed"].as_bool(), j["sleeping"].as_bool()), (Some(false), Some(false)));
+        assert_eq!(j.as_object().unwrap().len(), 9, "exactamente los 7 de v0.1.0 + suppressed + sleeping");
     }
 }
