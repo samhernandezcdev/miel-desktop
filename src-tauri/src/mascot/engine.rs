@@ -194,7 +194,8 @@ impl Engine {
             cv: Condvar::new(),
             done: Condvar::new(),
         });
-        let worker = Worker::new(host, cfg, fsm, talker, rng, clock);
+        let mut worker = Worker::new(host, cfg, fsm, talker, rng, clock);
+        worker.shared = Some(Arc::clone(&shared));
         let sh = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("miel-engine".into())
@@ -284,6 +285,32 @@ fn compose(fsm: &Fsm, talker: &Talker) -> View {
     v
 }
 
+/// Periodo de una espera expresado en milisegundos enteros, redondeado hacia ARRIBA. La `Condvar` de Windows ya
+/// redondeaba hacia arriba los `Duration` con fracciones de ms (33,3 ms → 34 ms), así que la espera efectiva
+/// no cambia al pasar los plazos a milisegundos del motor.
+fn period_ms(hz: f64) -> Ms {
+    (1000.0 / hz).ceil() as Ms
+}
+
+/// Próximo instante (en ms del reloj del motor) en que el hilo debe despertar por sí mismo; `None` = dormir
+/// indefinidamente. Mínimo absoluto de: plazo de la FSM, fin de la burbuja del hablante, cadencia del
+/// movimiento (en movimiento o siguiendo al cursor) y debounce de geometría. Suspendido (oculta, en pausa o
+/// suprimida sin anulación) solo cuenta el debounce de geometría. Solo lee: no cambia nada.
+fn next_deadline<H: Host>(w: &Worker<H>, now: Ms) -> Option<Ms> {
+    if w.fsm.is_suspended() {
+        return w.geom_due; // pausado/oculto/suprimido: solo un aviso de geometría pendiente puede despertarlo
+    }
+    let by_state = [w.fsm.next_wakeup(), w.talker.next_wakeup()].into_iter().flatten().min();
+    let by_motion = if w.moving {
+        Some(now + period_ms(w.cfg.follow_hz))
+    } else if w.fsm.behavior() == Behavior::Follow {
+        Some(now + period_ms(w.cfg.follow_settled_hz))
+    } else {
+        None
+    };
+    [by_state, by_motion, w.geom_due].into_iter().flatten().min()
+}
+
 struct Worker<H: Host> {
     host: Arc<H>,
     cfg: EngineConfig,
@@ -307,6 +334,8 @@ struct Worker<H: Host> {
     native_events: bool,
     /// Última visibilidad pedida a la ventana (empieza visible; la primera muestra la hace el ciclo de vida).
     shown: bool,
+    /// Estado compartido con `Engine` (la vista publicada). `None` en las pruebas sin hilo.
+    shared: Option<Arc<Shared>>,
 }
 
 impl<H: Host> Worker<H> {
@@ -342,6 +371,7 @@ impl<H: Host> Worker<H> {
             last_emitted,
             native_events: false,
             shown: true,
+            shared: None,
         }
     }
 
@@ -389,51 +419,43 @@ impl<H: Host> Worker<H> {
                 std::mem::take(&mut g.cmds)
             };
             let now = self.now();
-            let mut changed = false;
-            for c in cmds {
-                changed |= self.apply(c, now);
-            }
-            changed |= self.fsm.step(now, &mut self.rng);
-            changed |= self.talker.step(now);
-            changed |= self.talker.observe(now, &self.fsm.view(), &mut self.rng);
-            if changed {
-                // La FSM puede cambiar algo que el mensaje visible tapa (p. ej. sleepy→resting con
-                // la cara del mensaje activa): solo se emite si la vista compuesta es distinta.
-                let view = compose(&self.fsm, &self.talker);
-                if !same_view(&view, &self.last_emitted) {
-                    self.last_emitted = view;
-                    lock(&shared.inner).view = view;
-                    self.host.emit_view(&view);
-                }
-            }
-            if self.geom_due.is_some_and(|d| self.now() >= d) {
-                self.geom_due = None;
-                self.on_geometry_changed();
-            }
-            self.drive_motion();
+            self.tick(now, cmds);
         }
+    }
+
+    /// Un paso del motor tras despertar: aplica las órdenes, avanza FSM y hablante, emite la vista si cambió,
+    /// procesa el aviso de geometría vencido y mueve la abeja. No espera ni crea hilos: se prueba con `FakeClock`.
+    fn tick(&mut self, now: Ms, cmds: Vec<Cmd>) {
+        let mut changed = false;
+        for c in cmds {
+            changed |= self.apply(c, now);
+        }
+        changed |= self.fsm.step(now, &mut self.rng);
+        changed |= self.talker.step(now);
+        changed |= self.talker.observe(now, &self.fsm.view(), &mut self.rng);
+        if changed {
+            // La FSM puede cambiar algo que el mensaje visible tapa (p. ej. sleepy→resting con
+            // la cara del mensaje activa): solo se emite si la vista compuesta es distinta.
+            let view = compose(&self.fsm, &self.talker);
+            if !same_view(&view, &self.last_emitted) {
+                self.last_emitted = view;
+                if let Some(shared) = &self.shared {
+                    lock(&shared.inner).view = view; // antes de emitir, como siempre
+                }
+                self.host.emit_view(&view);
+            }
+        }
+        if self.geom_due.is_some_and(|d| self.now() >= d) {
+            self.geom_due = None;
+            self.on_geometry_changed();
+        }
+        self.drive_motion();
     }
 
     /// Cuánto puede dormir el hilo. `None` = indefinidamente (suspendido y sin avisos pendientes).
     fn wait_timeout(&self) -> Option<Duration> {
         let now = self.now();
-        let by_geom = self.geom_due.map(|d| Duration::from_millis(d.saturating_sub(now)));
-        if self.fsm.is_suspended() {
-            return by_geom; // pausado/oculto: solo un aviso de geometría pendiente puede despertarlo
-        }
-        let by_ms = [self.fsm.next_wakeup(), self.talker.next_wakeup()]
-            .into_iter()
-            .flatten()
-            .min()
-            .map(|t| Duration::from_millis(t.saturating_sub(now)));
-        let by_motion = if self.moving {
-            Some(Duration::from_secs_f64(1.0 / self.cfg.follow_hz))
-        } else if self.fsm.behavior() == Behavior::Follow {
-            Some(Duration::from_secs_f64(1.0 / self.cfg.follow_settled_hz))
-        } else {
-            None
-        };
-        [by_ms, by_motion, by_geom].into_iter().flatten().min()
+        next_deadline(self, now).map(|d| Duration::from_millis(d.saturating_sub(now)))
     }
 
     fn apply(&mut self, cmd: Cmd, now: Ms) -> bool {
@@ -1661,5 +1683,150 @@ mod tests {
         assert_eq!(host.views.lock().unwrap().len(), views, "suprimida: sin plazos, sin vistas nuevas");
         assert_eq!(host.calls(), 0, "y sin consultar el cursor");
         e.shutdown();
+    }
+
+    // ---- E4a: `next_deadline` y `Worker::tick`, sin hilos ni esperas reales (FakeClock) ----
+
+    use super::super::clock::FakeClock;
+
+    fn worker(cfg: EngineConfig) -> (Worker<Fake>, Arc<FakeClock>, Arc<Fake>) {
+        let host = Fake::new();
+        let clock = Arc::new(FakeClock::new(0));
+        let mut rng = match cfg.seed {
+            Some(s) => fastrand::Rng::with_seed(s),
+            None => fastrand::Rng::new(),
+        };
+        let fsm = Fsm::new(cfg.timings, 0, &mut rng);
+        let talker = Talker::new(cfg.talker, 0, &mut rng);
+        let mut w = Worker::new(host.clone(), cfg, fsm, talker, rng, clock.clone());
+        w.refresh(true);
+        (w, clock, host)
+    }
+
+    #[test]
+    fn next_deadline_is_none_when_hidden_paused_or_suppressed_without_override() {
+        for (name, cmd) in [("oculta", Cmd::Hidden(true)), ("pausada", Cmd::Pause(true)), ("suprimida", Cmd::Suppressed(true))] {
+            let (mut w, _c, _h) = worker(quiet_cfg());
+            assert_eq!(next_deadline(&w, 0), Some(600_000), "en marcha: plazo de Idle");
+            w.tick(0, vec![cmd]);
+            assert_eq!(next_deadline(&w, 0), None, "{name}: dormir indefinidamente");
+            assert_eq!(w.wait_timeout(), None, "{name}");
+        }
+        // suprimida pero con anulación: vuelve a correr
+        let (mut w, _c, _h) = worker(quiet_cfg());
+        w.tick(0, vec![Cmd::Suppressed(true)]);
+        assert_eq!(next_deadline(&w, 0), None);
+        w.tick(0, vec![Cmd::DndOverride]);
+        assert_eq!(next_deadline(&w, 0), Some(600_000), "anulada: corre otra vez");
+        w.tick(0, vec![Cmd::Suppressed(false)]);
+        assert_eq!(next_deadline(&w, 0), Some(600_000));
+    }
+
+    #[test]
+    fn next_deadline_only_counts_the_geometry_debounce_while_suspended() {
+        let (mut w, clock, _h) = worker(quiet_cfg());
+        clock.set(100);
+        w.tick(100, vec![Cmd::Hidden(true), Cmd::GeometryChanged]);
+        assert_eq!(next_deadline(&w, 100), Some(400), "oculta: solo el aviso de geometría");
+        assert_eq!(w.wait_timeout(), Some(Duration::from_millis(300)));
+        clock.set(400);
+        w.tick(400, vec![]);
+        assert_eq!(next_deadline(&w, 400), None, "procesado el aviso, vuelve a dormir indefinidamente");
+    }
+
+    #[test]
+    fn next_deadline_minimum_moves_as_the_clock_advances() {
+        let (mut w, clock, _h) = worker(quiet_cfg());
+        assert_eq!(next_deadline(&w, 0), Some(600_000));
+        clock.set(100);
+        w.tick(100, vec![Cmd::GeometryChanged]); // debounce de 300 ms → vence en 400
+        assert_eq!(next_deadline(&w, 100), Some(400), "el debounce es el mínimo");
+        assert_eq!(w.wait_timeout(), Some(Duration::from_millis(300)));
+        clock.set(250);
+        assert_eq!(next_deadline(&w, 250), Some(400), "el plazo es absoluto: no se desplaza");
+        assert_eq!(w.wait_timeout(), Some(Duration::from_millis(150)), "la espera sí se acorta");
+        clock.set(400);
+        w.tick(400, vec![]);
+        assert_eq!(next_deadline(&w, 400), Some(600_000), "vencido el debounce, vuelve el plazo de Idle");
+        // en movimiento: cadencia de 30 Hz (33,3 ms → 34 ms, redondeo hacia arriba)
+        w.moving = true;
+        assert_eq!(next_deadline(&w, 400), Some(434));
+        assert_eq!(w.wait_timeout(), Some(Duration::from_millis(34)));
+        w.moving = false;
+    }
+
+    #[test]
+    fn next_deadline_follows_the_fsm_deadline_and_the_cursor_cadence_in_follow() {
+        let (mut w, clock, _h) = worker(follow_cfg());
+        let d0 = next_deadline(&w, 0).unwrap();
+        assert_eq!(d0, 20, "Idle de 20 ms");
+        clock.set(30);
+        w.tick(30, vec![]);
+        assert_eq!(w.fsm.behavior(), Behavior::Follow);
+        let d = next_deadline(&w, 30).unwrap();
+        assert!(d <= 30 + 34, "en Follow se vigila el cursor como mucho cada ~34 ms: {d}");
+        assert!(d > 30);
+    }
+
+    #[test]
+    fn asleep_the_only_deadline_is_the_sleepy_to_resting_step() {
+        let (mut w, clock, host) = worker(quiet_cfg());
+        clock.set(1000);
+        w.fsm.set_sleeping(1000, true);
+        assert_eq!(next_deadline(&w, 1000), Some(5000), "sleepy → resting a los rest_settle (4 s)");
+        assert_eq!(w.fsm.view().expression, super::super::state::Expression::Sleepy);
+        clock.set(5000);
+        w.tick(5000, vec![]);
+        assert_eq!(w.fsm.view().expression, super::super::state::Expression::Resting);
+        assert_eq!(w.fsm.next_wakeup(), None, "la FSM ya no tiene plazos");
+        assert!(!host.views.lock().unwrap().is_empty(), "el paso se emitió");
+        // Rest conserva el movimiento hacia su rincón (cadencia de 34 ms) hasta llegar; después, nada.
+        let mut now = 5000;
+        while let Some(d) = next_deadline(&w, now) {
+            assert!(d <= now + 34, "solo la cadencia del movimiento: {d}");
+            now = d;
+            clock.set(now);
+            w.tick(now, vec![]);
+            assert!(now < 60_000, "el movimiento debe terminar");
+        }
+        clock.set(5_000_000);
+        w.tick(5_000_000, vec![]);
+        assert_eq!(next_deadline(&w, 5_000_000), None, "dormir no vence por sí solo");
+    }
+
+    /// Avanza el reloj de plazo en plazo (`next_deadline`) durante `total_ms` sin actividad y devuelve la
+    /// secuencia de vistas emitidas y el número de ticks.
+    fn run_idle_scenario(total_ms: Ms) -> (Vec<View>, usize) {
+        let cfg = EngineConfig { seed: Some(7), talker: TalkerConfig::default(), ..EngineConfig::default() };
+        let (mut w, clock, host) = worker(cfg);
+        let mut now = 0;
+        let mut ticks = 0;
+        while now < total_ms {
+            let next = next_deadline(&w, now).map_or(total_ms, |d| d.min(total_ms));
+            assert!(next >= now, "el plazo nunca queda en el pasado tras un tick: {next} < {now}");
+            now = next;
+            clock.set(now);
+            w.tick(now, vec![]);
+            ticks += 1;
+            assert!(ticks < 400_000, "el escenario no avanza");
+        }
+        let views = host.views.lock().unwrap().clone();
+        (views, ticks)
+    }
+
+    #[test]
+    fn ten_minutes_without_activity_run_in_no_real_time_and_are_deterministic() {
+        let t0 = Instant::now();
+        let (a, ticks) = run_idle_scenario(600_000);
+        assert!(t0.elapsed() < Duration::from_secs(5), "sin esperas reales: {:?}", t0.elapsed());
+        let (b, ticks_b) = run_idle_scenario(600_000);
+        assert_eq!(ticks, ticks_b);
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(&b) {
+            assert!(same_view(x, y) && x.version == y.version, "misma semilla, misma secuencia");
+        }
+        assert!(!a.is_empty(), "en 10 minutos algo cambia");
+        assert!(a.iter().any(|v| v.behavior != Behavior::Idle), "se visita algún comportamiento distinto de Idle");
+        assert!(a.windows(2).all(|p| p[0].version <= p[1].version), "la versión nunca retrocede");
     }
 }
