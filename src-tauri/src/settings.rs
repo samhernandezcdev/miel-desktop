@@ -339,7 +339,11 @@ pub fn load_from(path: &Path) -> (Settings, LoadOutcome) {
         }
         Err(e) => return (Settings::default(), LoadOutcome::Unreadable(e.to_string())),
     };
-    let parsed = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| Settings::from_value(&v));
+    // Un BOM UTF-8 inicial (lo añaden algunos editores y `Set-Content -Encoding UTF8` de Windows PowerShell 5) no es
+    // parte del JSON: se ignora al leer. Solo se mira aquí; los archivos y copias en disco no se tocan al cargar y
+    // `save_to` escribe siempre sin BOM.
+    let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(&bytes);
+    let parsed = serde_json::from_slice::<Value>(body).ok().and_then(|v| Settings::from_value(&v));
     match parsed {
         None => {
             let backup = copy_diagnostic(path, format!("settings.corrupt-{}.json", unix_secs()));
@@ -816,6 +820,83 @@ mod tests {
         assert_eq!(loaded, s);
         assert_eq!(outcome, LoadOutcome::Loaded { invalid: vec![], clamped: vec![] }, "esquema 2: sin migración");
         assert_eq!(names(&t), [FILE_NAME], "un archivo de esquema 2 no genera copias");
+    }
+
+    const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+
+    fn with_bom(body: &[u8]) -> Vec<u8> {
+        [BOM, body].concat()
+    }
+
+    #[test]
+    fn bom_with_schema_1_loads_like_without_it() {
+        let t = TempDir::new();
+        let raw = with_bom(V1_FILE.as_bytes());
+        fs::write(t.file(), &raw).unwrap();
+        let (s, o) = load_from(&t.file());
+        let t2 = TempDir::new();
+        fs::write(t2.file(), V1_FILE).unwrap();
+        let (s2, o2) = load_from(&t2.file());
+        assert_eq!(s, s2, "mismos valores con y sin BOM");
+        let LoadOutcome::Migrated { backup: Some(b), invalid, clamped } = o else { panic!("{o:?}") };
+        assert!(invalid.is_empty() && clamped.is_empty());
+        assert!(matches!(o2, LoadOutcome::Migrated { .. }));
+        assert_eq!(fs::read(&b).unwrap(), raw, "la copia v1 es fiel al original (con su BOM)");
+        assert_eq!(fs::read(t.file()).unwrap(), raw, "cargar no reescribe");
+        assert_eq!(names(&t), [FILE_NAME, V1_BACKUP_NAME], "ninguna copia por corrupción");
+    }
+
+    #[test]
+    fn bom_with_schema_2_loads_clean_without_copies_or_rewrite() {
+        let t = TempDir::new();
+        let s = Settings { paused: true, pet_size: 64, sleep_after_minutes: 30, ..Settings::default() };
+        save_to(&t.file(), &s).unwrap();
+        let raw = with_bom(&fs::read(t.file()).unwrap());
+        fs::write(t.file(), &raw).unwrap();
+        let (loaded, o) = load_from(&t.file());
+        assert_eq!(loaded, s);
+        assert_eq!(o, LoadOutcome::Loaded { invalid: vec![], clamped: vec![] });
+        assert_eq!(names(&t), [FILE_NAME], "sin copias");
+        assert_eq!(fs::read(t.file()).unwrap(), raw, "cargar no reescribe");
+    }
+
+    #[test]
+    fn bom_with_really_corrupt_content_is_still_corrupt() {
+        for body in [&b"{ esto no es json"[..], b"[1,2,3]", b"null"] {
+            let t = TempDir::new();
+            let raw = with_bom(body);
+            fs::write(t.file(), &raw).unwrap();
+            let (s, o) = load_from(&t.file());
+            assert_eq!(s, Settings::default());
+            let LoadOutcome::Corrupt { backup: Some(b) } = o else { panic!("{body:?} → {o:?}") };
+            assert_eq!(fs::read(b).unwrap(), raw, "copia fiel para diagnóstico");
+        }
+    }
+
+    #[test]
+    fn bom_alone_is_treated_like_an_empty_file() {
+        let t = TempDir::new();
+        fs::write(t.file(), BOM).unwrap();
+        let (s, o) = load_from(&t.file());
+        assert_eq!(s, Settings::default());
+        assert!(matches!(o, LoadOutcome::Corrupt { backup: Some(_) }), "igual que un archivo vacío: {o:?}");
+    }
+
+    #[test]
+    fn saving_never_writes_a_bom_even_after_loading_one_that_had_it() {
+        let t = TempDir::new();
+        save_to(&t.file(), &Settings::default()).unwrap();
+        assert!(!fs::read(t.file()).unwrap().starts_with(BOM));
+        // archivo con BOM → almacén → cambio → guardado
+        fs::write(t.file(), with_bom(&fs::read(t.file()).unwrap())).unwrap();
+        let store = SettingsStore::load(t.file());
+        assert_eq!(*store.outcome(), LoadOutcome::Loaded { invalid: vec![], clamped: vec![] });
+        store.set_setting("pet_size", &json!(64)).unwrap();
+        let saved = fs::read(t.file()).unwrap();
+        assert!(!saved.starts_with(BOM), "lo guardado no lleva BOM");
+        let (again, o) = load_from(&t.file());
+        assert_eq!(again.pet_size, 64);
+        assert_eq!(o, LoadOutcome::Loaded { invalid: vec![], clamped: vec![] });
     }
 
     #[test]
