@@ -1,5 +1,5 @@
 {
-  "_comment": "Listas PERMITIDAS exactas de la comprobación de privacidad (tools/check_privacy.py). Cambiarlas exige revisión de privacidad explícita (ver docs/PRIVACY.md). 'planned' = permitido por docs/plan/v0.2.0.md §10-11 pero aún no usado.",
+  "_comment": "Listas PERMITIDAS exactas de la comprobación de privacidad (tools/check_privacy.py). Cambiarlas exige revisión de privacidad explícita (ver docs/PRIVACY.md). 'planned' = permitido por docs/plan/v0.2.0.md §10-11 pero aún no usado. EN USO desde E4b (No molestar automático): SHQueryUserNotificationState con QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN y QUNS_PRESENTATION_MODE (solo un entero de estado; ver windows_probe.rs y mascot/dnd.rs). Identificar QUÉ aplicación está a pantalla completa (GetForegroundWindow, EnumWindows, GetWindowThreadProcessId, QueryFullProcessImageName...) está PROHIBIDO en tools/check_privacy.py.",
   "capabilities": {
     "default.json": {
       "windows": ["main"],

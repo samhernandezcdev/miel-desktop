@@ -13,6 +13,7 @@ param(
   [string]$Script = 'pause@20,resume@28,hide@36,show@44,suppress@52,override@60,unsuppress@68,follow_off@76,follow_on@84,suppress@92,unsuppress@100'
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\common.ps1')   # Write-Utf8NoBom / Clear-PersonalPaths
 $settings = Join-Path $env:APPDATA 'lat.bkode.miel\settings.json'
 $dir = Split-Path $settings
 $bak = Join-Path $env:TEMP 'miel-settings-eq.bak'
@@ -42,6 +43,7 @@ try {
   }
 }
 finally {
+  Clear-PersonalPathsInDir $Out   # saneado en el origen: ninguna ruta personal llega a los registros
   Get-Process miel -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Remove-Item Env:\MIEL_FAST, Env:\MIEL_SEED, Env:\MIEL_DIAG_SCRIPT -ErrorAction SilentlyContinue
   if ($existed) { Copy-Item $bak $settings -Force; Remove-Item $bak -Force } else {

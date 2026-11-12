@@ -17,6 +17,7 @@ function noticeText(n: Notice, t: Strings): string {
     pet_size: t.petSize.label,
     speed: t.speed.label,
     reduced_motion: t.reducedMotion.label,
+    dnd_auto_enabled: t.dnd.label,
   }[n.key];
   return n.kind === "rejected" ? fill(t.rejected, { name }) : fill(t.adjusted, { name, value: String(n.applied) });
 }
@@ -222,6 +223,18 @@ export default function SettingsApp({ api = tauriApi, lang }: Props) {
               unit={t.messageInterval.unit}
               value={settings.message_interval_minutes}
               onCommit={set("message_interval_minutes")}
+            />
+          </section>
+
+          <section aria-labelledby={`${uid}-dnd`}>
+            <h2 id={`${uid}-dnd`}>{t.sections.dnd}</h2>
+            <Switch
+              id={`${uid}-dnd-auto`}
+              label={t.dnd.label}
+              hint={t.dnd.hint}
+              restart={t.appliesNow}
+              checked={settings.dnd_auto_enabled}
+              onChange={(v) => void set("dnd_auto_enabled")(v)}
             />
           </section>
         </form>

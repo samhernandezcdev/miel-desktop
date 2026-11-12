@@ -5,7 +5,13 @@ import { listen } from "@tauri-apps/api/event";
 export const CHANGED_EVENT = "settings://changed";
 
 /** Claves que esta ventana puede cambiar (subconjunto de la lista cerrada de `set_setting` en Rust). */
-export type EditableKey = "messages_enabled" | "message_interval_minutes" | "pet_size" | "speed" | "reduced_motion";
+export type EditableKey =
+  | "messages_enabled"
+  | "message_interval_minutes"
+  | "pet_size"
+  | "speed"
+  | "reduced_motion"
+  | "dnd_auto_enabled";
 
 /** Preferencias tal como las devuelve Rust (snake_case). Solo se declaran las que esta ventana muestra. */
 export interface SettingsData {
@@ -14,6 +20,7 @@ export interface SettingsData {
   pet_size: number;
   speed: number;
   reduced_motion: boolean;
+  dnd_auto_enabled: boolean;
   [other: string]: unknown;
 }
 

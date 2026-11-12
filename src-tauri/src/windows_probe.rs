@@ -57,4 +57,26 @@ mod tests {
             Err(e) => assert_eq!(e, ProbeError::CallFailed),
         }
     }
+
+    /// Microbenchmark MANUAL (ignorado por defecto): coste de UNA consulta real de `SHQueryUserNotificationState`.
+    /// `cargo test --release --lib windows_probe -- --ignored --nocapture`. Solo lectura; sin efectos en el sistema.
+    #[test]
+    #[ignore = "medición manual; no es una prueba funcional"]
+    fn bench_one_notification_state_query() {
+        let p = WindowsProbe::new();
+        for _ in 0..200 {
+            let _ = p.notification_state(); // calentamiento
+        }
+        let n = 20_000u32;
+        let t0 = std::time::Instant::now();
+        let mut ok = 0u32;
+        for _ in 0..n {
+            ok += u32::from(p.notification_state().is_ok());
+        }
+        let el = t0.elapsed();
+        let per = el.as_secs_f64() * 1e6 / f64::from(n);
+        println!("SHQueryUserNotificationState: {per:.2} µs por consulta ({ok}/{n} correctas, {el:?} en total)");
+        // Con el sondeo cada 2,5 s (0,4 Hz): fracción de un núcleo = per[µs] * 0,4 / 1e6
+        println!("coste estimado del sondeo a 0,4 Hz: {:.6} % de un núcleo", per * 0.4 / 1e6 * 100.0);
+    }
 }

@@ -28,6 +28,7 @@ pub mod id {
     pub const FOLLOW: &str = "miel.follow";
     pub const PAUSE: &str = "miel.pause";
     pub const SETTINGS: &str = "miel.settings";
+    pub const SHOW_ANYWAY: &str = "miel.show_anyway";
     pub const QUIT: &str = "miel.quit";
 }
 
@@ -39,6 +40,8 @@ pub enum TrayAction {
     TogglePause,
     /// «Ajustes…» (E3): abre la ventana de ajustes o la enfoca si ya existe.
     OpenSettings,
+    /// «Mostrar de todos modos» (E4b): anula la supresión de No molestar del episodio actual.
+    ShowAnyway,
     Quit,
 }
 
@@ -50,6 +53,7 @@ impl TrayAction {
             id::FOLLOW => Self::ToggleFollow,
             id::PAUSE => Self::TogglePause,
             id::SETTINGS => Self::OpenSettings,
+            id::SHOW_ANYWAY => Self::ShowAnyway,
             id::QUIT => Self::Quit,
             _ => return None,
         })
@@ -67,6 +71,12 @@ pub struct MenuModel {
     /// oculta ni pausada ni suprimida), pero vive en el modelo para que el menú siga siendo una función
     /// pura de la vista.
     pub settings_enabled: bool,
+    /// «Mostrar de todos modos» (E4b): el elemento SOLO existe en el menú mientras hay supresión en vigor y la
+    /// persona no ocultó a Miel (si la ocultó, «Mostrar» ya hace lo mismo: quita `hidden` y anula el episodio).
+    /// Mostrar/Ocultar siguen reflejando únicamente `hidden`.
+    pub show_anyway: bool,
+    /// Ayuda del icono (tooltip): «Miel está oculta por No molestar» mientras la supresión esté en vigor.
+    pub tooltip: &'static str,
 }
 
 pub fn menu_model(v: &View) -> MenuModel {
@@ -76,24 +86,9 @@ pub fn menu_model(v: &View) -> MenuModel {
         follow_checked: v.follow_enabled,
         pause_text: if v.paused { "Reanudar" } else { "Pausar" },
         settings_enabled: true,
+        show_anyway: v.suppressed && !v.hidden,
+        tooltip: if v.suppressed { TOOLTIP_SUPPRESSED } else { TOOLTIP_DEFAULT },
     }
-}
-
-/// E1b — modelo ampliado, SOLO modelo: el menú real todavía no tiene estos elementos (los añade E4).
-/// Mostrar/Ocultar siguen reflejando únicamente `hidden` (`base`); la supresión automática tiene su
-/// propia acción.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SuppressionMenuModel {
-    pub base: MenuModel,
-    /// "Mostrar de todos modos" estaría disponible mientras haya supresión en vigor, esté o no la
-    /// ventana oculta por la persona (plan §4.3, D7).
-    pub show_anyway_available: bool,
-    /// Ayuda de la bandeja "Miel está oculta por No molestar" mientras la supresión esté en vigor.
-    pub suppression_hint: bool,
-}
-
-pub fn suppression_menu_model(v: &View) -> SuppressionMenuModel {
-    SuppressionMenuModel { base: menu_model(v), show_anyway_available: v.suppressed, suppression_hint: v.suppressed }
 }
 
 /// Destino de las actualizaciones del menú (implementado por los elementos reales y por mocks).
@@ -103,6 +98,8 @@ pub trait MenuSink {
     fn set_follow_checked(&self, checked: bool);
     fn set_pause_text(&self, text: &str);
     fn set_settings_enabled(&self, enabled: bool);
+    fn set_show_anyway_visible(&self, visible: bool);
+    fn set_tooltip(&self, text: &str);
 }
 
 /// `sync_tray_menu`: aplica el modelo al menú SOLO en lo que cambió desde la última vez
@@ -151,6 +148,14 @@ impl<S: MenuSink> MenuSync<S> {
         if old.is_none_or(|o| o.settings_enabled != new.settings_enabled) {
             self.sink.set_settings_enabled(new.settings_enabled);
         }
+        // E4b: el menú y el icono nacen con el modelo inicial (`make_menu`/`build`); en la primera sincronización
+        // solo hay algo que hacer si ese modelo NO es el de reposo (elemento ausente y tooltip «Miel»).
+        if old.map_or(new.show_anyway, |o| o.show_anyway != new.show_anyway) {
+            self.sink.set_show_anyway_visible(new.show_anyway);
+        }
+        if old.map_or(new.tooltip != TOOLTIP_DEFAULT, |o| o.tooltip != new.tooltip) {
+            self.sink.set_tooltip(new.tooltip);
+        }
         true
     }
 
@@ -177,6 +182,7 @@ pub fn dispatch(action: TrayAction, ctl: &dyn Control) {
         TrayAction::ToggleFollow => ctl.send(Cmd::ToggleFollow),
         TrayAction::TogglePause => ctl.send(Cmd::TogglePause),
         TrayAction::OpenSettings => ctl.open_settings(),
+        TrayAction::ShowAnyway => ctl.send(Cmd::DndOverride),
         TrayAction::Quit => ctl.quit(),
     }
 }
@@ -190,6 +196,10 @@ pub struct TrayItems<R: Runtime> {
     pub follow: CheckMenuItem<R>,
     pub pause: MenuItem<R>,
     pub settings: MenuItem<R>,
+    /// «Mostrar de todos modos» (E4b): se inserta en `menu` solo mientras hay supresión y se retira después.
+    pub show_anyway: MenuItem<R>,
+    menu: Menu<R>,
+    show_anyway_in_menu: Mutex<bool>,
     /// El icono se conserva mientras viva el menú (no se recrea al cambiar de estado).
     tray: Mutex<Option<TrayIcon<R>>>,
 }
@@ -215,6 +225,23 @@ impl<R: Runtime> MenuSink for TrayItems<R> {
     }
     fn set_settings_enabled(&self, enabled: bool) {
         log_err("Ajustes", self.settings.set_enabled(enabled));
+    }
+    fn set_show_anyway_visible(&self, visible: bool) {
+        let mut inside = self.show_anyway_in_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if visible == *inside {
+            return;
+        }
+        // justo después de «Ocultar Miel» (posición 2: tras Mostrar y Ocultar)
+        let r = if visible { self.menu.insert(&self.show_anyway, 2) } else { self.menu.remove(&self.show_anyway) };
+        match r {
+            Ok(()) => *inside = visible,
+            Err(e) => eprintln!("[miel] bandeja: Mostrar de todos modos falló: {e}"),
+        }
+    }
+    fn set_tooltip(&self, text: &str) {
+        if let Some(tray) = self.tray.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            log_err("tooltip", tray.set_tooltip(Some(text)));
+        }
     }
 }
 
@@ -254,7 +281,7 @@ pub fn build(app: &AppHandle, initial: &View) -> Result<(), Box<dyn std::error::
     let (menu, items) = make_menu(app, initial)?;
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("Miel")
+        .tooltip(TOOLTIP_DEFAULT)
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match TrayAction::from_id(event.id().as_ref()) {
@@ -276,6 +303,10 @@ pub const LABEL_HIDE: &str = "Ocultar Miel";
 pub const LABEL_FOLLOW: &str = "Seguir cursor";
 pub const LABEL_SETTINGS: &str = "Ajustes…";
 pub const LABEL_QUIT: &str = "Cerrar Miel";
+pub const LABEL_SHOW_ANYWAY: &str = "Mostrar de todos modos";
+/// Ayuda del icono de la bandeja (tooltip).
+pub const TOOLTIP_DEFAULT: &str = "Miel";
+pub const TOOLTIP_SUPPRESSED: &str = "Miel está oculta por No molestar";
 
 /// Crea los elementos del menú con el modelo inicial. Genérica sobre el runtime: en producción
 /// es `Wry`; en pruebas, `MockRuntime` (sin menú nativo ni sesión gráfica).
@@ -294,8 +325,24 @@ pub fn make_menu<R: Runtime>(
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
+    let show_anyway =
+        MenuItem::with_id(app, id::SHOW_ANYWAY, LABEL_SHOW_ANYWAY, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &hide, &sep1, &follow, &pause, &sep2, &settings, &sep3, &quit])?;
-    Ok((menu, TrayItems { show, hide, follow, pause, settings, tray: Mutex::new(None) }))
+    let items = TrayItems {
+        show,
+        hide,
+        follow,
+        pause,
+        settings,
+        show_anyway,
+        menu: menu.clone(),
+        show_anyway_in_menu: Mutex::new(false),
+        tray: Mutex::new(None),
+    };
+    if m.show_anyway {
+        items.set_show_anyway_visible(true); // arranque ya suprimido (no ocurre hoy, pero el modelo manda)
+    }
+    Ok((menu, items))
 }
 
 /// Actualiza el menú desde el hilo principal. Se invoca vía `run_on_main_thread`.
@@ -333,6 +380,8 @@ mod tests {
         follow: RefCell<bool>,
         pause: RefCell<String>,
         settings: RefCell<bool>,
+        show_anyway: RefCell<bool>,
+        tooltip: RefCell<String>,
     }
     impl MenuSink for &FakeSink {
         fn set_show_enabled(&self, e: bool) {
@@ -354,6 +403,14 @@ mod tests {
         fn set_settings_enabled(&self, e: bool) {
             *self.settings.borrow_mut() = e;
             self.calls.borrow_mut().push(format!("settings={e}"));
+        }
+        fn set_show_anyway_visible(&self, v: bool) {
+            *self.show_anyway.borrow_mut() = v;
+            self.calls.borrow_mut().push(format!("show_anyway={v}"));
+        }
+        fn set_tooltip(&self, t: &str) {
+            *self.tooltip.borrow_mut() = t.to_string();
+            self.calls.borrow_mut().push(format!("tooltip={t}"));
         }
     }
 
@@ -391,9 +448,9 @@ mod tests {
     #[test]
     fn model_reflects_visibility_follow_and_pause() {
         let m = menu_model(&view(false, false, true));
-        assert_eq!(m, MenuModel { show_enabled: false, hide_enabled: true, follow_checked: true, pause_text: "Pausar", settings_enabled: true });
+        assert_eq!(m, MenuModel { show_enabled: false, hide_enabled: true, follow_checked: true, pause_text: "Pausar", settings_enabled: true, show_anyway: false, tooltip: TOOLTIP_DEFAULT });
         let m = menu_model(&view(true, true, false));
-        assert_eq!(m, MenuModel { show_enabled: true, hide_enabled: false, follow_checked: false, pause_text: "Reanudar", settings_enabled: true });
+        assert_eq!(m, MenuModel { show_enabled: true, hide_enabled: false, follow_checked: false, pause_text: "Reanudar", settings_enabled: true, show_anyway: false, tooltip: TOOLTIP_DEFAULT });
         // pausar no es ocultar y ocultar no quita la pausa: dimensiones independientes
         let m = menu_model(&view(true, false, true));
         assert!(m.hide_enabled && !m.show_enabled && m.pause_text == "Reanudar");
@@ -483,23 +540,71 @@ mod tests {
         assert_eq!(*ctl.quits.borrow(), 0);
     }
 
+    fn suppressed_view(hidden: bool) -> View {
+        View { suppressed: true, ..view(false, hidden, true) }
+    }
+
     #[test]
-    fn suppression_model_extends_without_changing_show_hide_semantics() {
-        let mut v = view(false, false, true);
-        let m = suppression_menu_model(&v);
-        assert_eq!(m.base, menu_model(&v));
-        assert!(!m.show_anyway_available && !m.suppression_hint, "producción: nunca hay supresión");
-        // supresión en vigor con la ventana oculta por la supresión (no por la persona)
-        v.suppressed = true;
-        let m = suppression_menu_model(&v);
-        assert!(m.show_anyway_available && m.suppression_hint);
-        assert_eq!((m.base.show_enabled, m.base.hide_enabled), (false, true), "Mostrar/Ocultar reflejan solo `hidden`");
-        // supresión + oculta por la persona: sigue disponible "Mostrar de todos modos" y Mostrar está habilitado
-        v.hidden = true;
-        let m = suppression_menu_model(&v);
-        assert!(m.show_anyway_available);
-        assert_eq!((m.base.show_enabled, m.base.hide_enabled), (true, false));
-        // el modelo real del menú no cambia con la supresión (no hay elementos nuevos)
-        assert_eq!(menu_model(&v), menu_model(&View { suppressed: false, ..v }));
+    fn show_anyway_exists_only_while_suppressed_and_not_hidden_by_the_user() {
+        assert!(!menu_model(&view(false, false, true)).show_anyway, "sin supresión: nunca");
+        assert!(!menu_model(&view(false, true, true)).show_anyway, "oculta sin supresión: nunca");
+        let m = menu_model(&suppressed_view(false));
+        assert!(m.show_anyway, "suprimida y no oculta");
+        // Mostrar/Ocultar siguen reflejando solo `hidden`
+        assert_eq!((m.show_enabled, m.hide_enabled), (false, true));
+        // suprimida y oculta por la persona: «Mostrar» ya hace lo mismo (quita hidden y anula el episodio)
+        let m = menu_model(&suppressed_view(true));
+        assert!(!m.show_anyway);
+        assert_eq!((m.show_enabled, m.hide_enabled), (true, false));
+        // la pausa no influye
+        assert!(menu_model(&View { paused: true, ..suppressed_view(false) }).show_anyway);
+    }
+
+    #[test]
+    fn the_tooltip_explains_the_suppression_while_it_lasts() {
+        assert_eq!(menu_model(&view(false, false, true)).tooltip, "Miel");
+        assert_eq!(menu_model(&suppressed_view(false)).tooltip, "Miel está oculta por No molestar");
+        assert_eq!(menu_model(&suppressed_view(true)).tooltip, TOOLTIP_SUPPRESSED, "también si además la ocultó la persona");
+    }
+
+    #[test]
+    fn sync_adds_and_removes_the_item_and_the_tooltip_only_on_changes() {
+        let sink = FakeSink::default();
+        let sync = MenuSync::new(&sink);
+        sync.sync(&view(false, false, true));
+        assert!(
+            !sink.calls.borrow().iter().any(|c| c.starts_with("show_anyway") || c.starts_with("tooltip")),
+            "reposo: nada que aplicar"
+        );
+        assert!(sync.sync(&suppressed_view(false)));
+        assert_eq!(&sink.calls.borrow()[5..], ["show_anyway=true", &format!("tooltip={TOOLTIP_SUPPRESSED}")]);
+        assert!(!sync.sync(&suppressed_view(false)), "igual: nada");
+        let n = sink.calls.borrow().len();
+        // la persona oculta durante el episodio: el elemento sale, el tooltip se queda
+        assert!(sync.sync(&suppressed_view(true)));
+        assert_eq!(&sink.calls.borrow()[n..], ["show=true", "hide=false", "show_anyway=false"]);
+        // termina el episodio
+        assert!(sync.sync(&view(false, false, true)));
+        assert_eq!(sink.calls.borrow().last().unwrap(), &format!("tooltip={TOOLTIP_DEFAULT}"));
+        assert!(!*sink.show_anyway.borrow());
+    }
+
+    #[test]
+    fn a_first_sync_that_starts_suppressed_applies_the_item_and_the_tooltip() {
+        let sink = FakeSink::default();
+        let sync = MenuSync::new(&sink);
+        sync.sync(&suppressed_view(false));
+        assert!(*sink.show_anyway.borrow() && *sink.tooltip.borrow() == TOOLTIP_SUPPRESSED);
+    }
+
+    #[test]
+    fn show_anyway_maps_to_the_override_command_and_nothing_else() {
+        assert_eq!(TrayAction::from_id(id::SHOW_ANYWAY), Some(TrayAction::ShowAnyway));
+        let ids = [id::SHOW, id::HIDE, id::FOLLOW, id::PAUSE, id::SETTINGS, id::SHOW_ANYWAY, id::QUIT];
+        assert_eq!(ids.iter().collect::<std::collections::HashSet<_>>().len(), 7, "ids únicos");
+        let ctl = FakeControl::default();
+        dispatch(TrayAction::ShowAnyway, &ctl);
+        assert_eq!(*ctl.sent.borrow(), [Cmd::DndOverride]);
+        assert_eq!((*ctl.quits.borrow(), *ctl.settings_opens.borrow()), (0, 0));
     }
 }

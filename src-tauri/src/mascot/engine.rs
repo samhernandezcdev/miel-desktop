@@ -19,12 +19,14 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use super::clock::{Clock, SystemClock};
+use super::dnd::{self, Change, Detector};
 use super::geometry::{
     anchor_of, clamp_anchor, ensure_center_visible, follow_target, fully_visible, nearest_area,
     rest_spot, window_origin, Frame, Rect, Vec2,
 };
 use super::messages::{Talker, TalkerConfig};
 use super::motion::{Motion, MotionParams};
+use super::probe::SystemProbe;
 use super::state::{Behavior, Fsm, Ms, Timings, View};
 
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +76,9 @@ pub enum Cmd {
     /// hace nada). **E1b: solo alcanzable desde pruebas y `diag`.**
     #[allow(dead_code)]
     DndOverride,
+    /// El interruptor «No molestar automático» cambió (E4b): se aplica al instante. `false` termina cualquier
+    /// episodio y detiene el sondeo; `true` lo reanuda (con una lectura inmediata si Miel no está oculta ni pausada).
+    DndAuto(bool),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,6 +105,10 @@ pub struct EngineConfig {
     /// Estado inicial (preferencias persistidas): seguimiento permitido y pausa. `Hidden` nunca se restaura.
     pub initial_follow: bool,
     pub initial_paused: bool,
+    /// «No molestar automático» activado al arrancar (`dnd_auto_enabled`). Sin sonda no hace nada.
+    pub dnd_auto: bool,
+    /// Intervalo del sondeo de No molestar (ms del reloj del motor).
+    pub dnd_poll_ms: Ms,
     pub seed: Option<u64>,
 }
 
@@ -119,6 +128,8 @@ impl Default for EngineConfig {
             talker: TalkerConfig::default(),
             initial_follow: true,
             initial_paused: false,
+            dnd_auto: false,
+            dnd_poll_ms: dnd::POLL_MS,
             seed: None,
         }
     }
@@ -169,8 +180,19 @@ impl Engine {
         Self::spawn_with_clock(host, cfg, Arc::new(SystemClock::new()))
     }
 
-    /// Como `spawn`, con el reloj del motor inyectado (pruebas deterministas con `FakeClock`).
+    /// Como `spawn`, con el reloj del motor inyectado (pruebas deterministas con `FakeClock`). Sin sonda del
+    /// sistema: No molestar automático no hace nada.
     pub fn spawn_with_clock<H: Host>(host: Arc<H>, cfg: EngineConfig, clock: Arc<dyn Clock>) -> Engine {
+        Self::spawn_with(host, cfg, clock, None)
+    }
+
+    /// Arranque completo: reloj y sonda del sistema inyectados (producción: `SystemClock` y `WindowsProbe`).
+    pub fn spawn_with<H: Host>(
+        host: Arc<H>,
+        cfg: EngineConfig,
+        clock: Arc<dyn Clock>,
+        probe: Option<Arc<dyn SystemProbe>>,
+    ) -> Engine {
         let mut rng = match cfg.seed {
             Some(s) => fastrand::Rng::with_seed(s),
             None => fastrand::Rng::new(),
@@ -196,6 +218,7 @@ impl Engine {
         });
         let mut worker = Worker::new(host, cfg, fsm, talker, rng, clock);
         worker.shared = Some(Arc::clone(&shared));
+        worker.probe = probe;
         let sh = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("miel-engine".into())
@@ -294,11 +317,15 @@ fn period_ms(hz: f64) -> Ms {
 
 /// Próximo instante (en ms del reloj del motor) en que el hilo debe despertar por sí mismo; `None` = dormir
 /// indefinidamente. Mínimo absoluto de: plazo de la FSM, fin de la burbuja del hablante, cadencia del
-/// movimiento (en movimiento o siguiendo al cursor) y debounce de geometría. Suspendido (oculta, en pausa o
-/// suprimida sin anulación) solo cuenta el debounce de geometría. Solo lee: no cambia nada.
+/// movimiento (en movimiento o siguiendo al cursor), debounce de geometría y sondeo de No molestar (con su puerta).
+/// Suspendido (oculta, en pausa o suprimida sin anulación) solo cuentan el debounce y el sondeo. Solo lee: no cambia nada.
 fn next_deadline<H: Host>(w: &Worker<H>, now: Ms) -> Option<Ms> {
+    // Sondeo de No molestar: tiene su propia puerta (también corre MIENTRAS está suprimida, para saber cuándo termina;
+    // nunca con la ventana oculta o pausada por la persona).
+    let by_dnd = if w.dnd_gate() { w.dnd.next_poll } else { None };
     if w.fsm.is_suspended() {
-        return w.geom_due; // pausado/oculto/suprimido: solo un aviso de geometría pendiente puede despertarlo
+        // pausado/oculto/suprimido: solo un aviso de geometría o el sondeo de recuperación pueden despertarlo
+        return [w.geom_due, by_dnd].into_iter().flatten().min();
     }
     let by_state = [w.fsm.next_wakeup(), w.talker.next_wakeup()].into_iter().flatten().min();
     let by_motion = if w.moving {
@@ -308,7 +335,7 @@ fn next_deadline<H: Host>(w: &Worker<H>, now: Ms) -> Option<Ms> {
     } else {
         None
     };
-    [by_state, by_motion, w.geom_due].into_iter().flatten().min()
+    [by_state, by_motion, w.geom_due, by_dnd].into_iter().flatten().min()
 }
 
 struct Worker<H: Host> {
@@ -336,6 +363,19 @@ struct Worker<H: Host> {
     shown: bool,
     /// Estado compartido con `Engine` (la vista publicada). `None` en las pruebas sin hilo.
     shared: Option<Arc<Shared>>,
+    /// Sonda del sistema (E4b). `None` = sin sondeo (pruebas y plataformas sin sonda).
+    probe: Option<Arc<dyn SystemProbe>>,
+    /// Tarea `dnd_poll` del planificador.
+    dnd: DndTask,
+}
+
+/// Estado de la tarea de sondeo de No molestar. Solo hay un plazo (`next_poll`) y entra en `next_deadline`.
+struct DndTask {
+    /// Interruptor «No molestar automático».
+    enabled: bool,
+    det: Detector,
+    /// Próximo sondeo. `Some` solo mientras la puerta está abierta (ver `Worker::dnd_gate`).
+    next_poll: Option<Ms>,
 }
 
 impl<H: Host> Worker<H> {
@@ -350,6 +390,7 @@ impl<H: Host> Worker<H> {
         let (fx, fy) = cfg.anchor_frac;
         let last_emitted = compose(&fsm, &talker);
         let last_tick = clock.now_ms();
+        let dnd_auto = cfg.dnd_auto;
         Self {
             host,
             cfg,
@@ -372,6 +413,8 @@ impl<H: Host> Worker<H> {
             native_events: false,
             shown: true,
             shared: None,
+            probe: None,
+            dnd: DndTask { enabled: dnd_auto, det: Detector::new(), next_poll: None },
         }
     }
 
@@ -397,9 +440,69 @@ impl<H: Host> Worker<H> {
         self.clock.now_ms()
     }
 
+    // ---- No molestar automático (E4b): una tarea más del planificador único ----------------------------------
+
+    /// Puerta de estado del sondeo (plan §4.4): hay sonda, el interruptor está activo y la persona no ocultó ni
+    /// pausó a Miel. SÍ corre mientras está suprimida (para saber cuándo termina el episodio).
+    fn dnd_gate(&self) -> bool {
+        self.probe.is_some() && self.dnd.enabled && !self.fsm.is_hidden() && !self.fsm.is_paused()
+    }
+
+    /// Alinea `next_poll` con la puerta. Al abrirse (arranque, mostrar, reanudar, activar el interruptor) se consulta de
+    /// inmediato y las rachas de histéresis empiezan de cero; al cerrarse (ocultar/pausar a mano, apagar) el sondeo se
+    /// detiene por completo.
+    fn dnd_sync_gate(&mut self, now: Ms) {
+        match (self.dnd_gate(), self.dnd.next_poll) {
+            (true, None) => {
+                self.dnd.det.forget_streaks();
+                self.dnd.next_poll = Some(now);
+            }
+            (false, Some(_)) => self.dnd.next_poll = None,
+            _ => {}
+        }
+    }
+
+    /// Abre o cierra el episodio de supresión en la FSM y alinea ventana y mensajes.
+    fn set_episode(&mut self, now: Ms, suppressed: bool) -> bool {
+        let changed = self.fsm.set_suppressed(now, suppressed);
+        self.sync_visibility();
+        self.sync_talker(now) | changed
+    }
+
+    /// Si el sondeo vence, lee la sonda, aplica la histéresis y, si cambia el episodio, lo traslada a la FSM.
+    fn dnd_poll(&mut self, now: Ms) -> bool {
+        let Some(due) = self.dnd.next_poll else { return false };
+        if now < due || !self.dnd_gate() {
+            return false;
+        }
+        self.dnd.next_poll = Some(now + self.cfg.dnd_poll_ms);
+        let Some(probe) = self.probe.clone() else { return false };
+        match self.dnd.det.feed(probe.notification_state()) {
+            Some(Change::Enter) => {
+                if crate::DIAG {
+                    eprintln!("[miel] No molestar: empieza la supresión");
+                }
+                self.set_episode(now, true)
+            }
+            Some(Change::Exit) => {
+                if crate::DIAG {
+                    eprintln!("[miel] No molestar: termina la supresión");
+                }
+                self.set_episode(now, false)
+            }
+            Some(Change::ExitByErrors) => {
+                eprintln!("[miel] No molestar: {} errores seguidos de la sonda; termina la supresión", dnd::MAX_ERRORS);
+                self.set_episode(now, false)
+            }
+            None => false,
+        }
+    }
+
     fn run(mut self, shared: &Shared) {
         let _stop = StopGuard(shared);
         self.refresh(true);
+        let now0 = self.now();
+        self.dnd_sync_gate(now0);
         loop {
             let timeout = self.wait_timeout();
             let cmds = {
@@ -430,7 +533,9 @@ impl<H: Host> Worker<H> {
         for c in cmds {
             changed |= self.apply(c, now);
         }
+        self.dnd_sync_gate(now);
         changed |= self.fsm.step(now, &mut self.rng);
+        changed |= self.dnd_poll(now);
         changed |= self.talker.step(now);
         changed |= self.talker.observe(now, &self.fsm.view(), &mut self.rng);
         if changed {
@@ -478,6 +583,17 @@ impl<H: Host> Worker<H> {
                 let changed = self.fsm.set_dnd_override(now);
                 self.sync_visibility();
                 self.sync_talker(now) | changed
+            }
+            Cmd::DndAuto(on) => {
+                self.dnd.enabled = on;
+                if on {
+                    false // `dnd_sync_gate` abre la puerta (si procede) y lee de inmediato
+                } else {
+                    // apagar termina CUALQUIER episodio al instante (también limpia la anulación) y detiene el sondeo
+                    self.dnd.det.reset();
+                    self.dnd.next_poll = None;
+                    self.set_episode(now, false)
+                }
             }
             Cmd::FollowEnabled(e) => self.fsm.set_follow_enabled(now, &mut self.rng, e),
             Cmd::TogglePause => {
@@ -1828,5 +1944,340 @@ mod tests {
         assert!(!a.is_empty(), "en 10 minutos algo cambia");
         assert!(a.iter().any(|v| v.behavior != Behavior::Idle), "se visita algún comportamiento distinto de Idle");
         assert!(a.windows(2).all(|p| p[0].version <= p[1].version), "la versión nunca retrocede");
+    }
+
+    // ---- E4b: sondeo de No molestar (FakeProbe + FakeClock, sin hilos ni esperas reales) ----
+
+    use super::super::probe::{FakeProbe, NotifState, ProbeError};
+
+    type DndWorker = (Worker<Fake>, Arc<FakeClock>, Arc<Fake>, Arc<FakeProbe>);
+
+    fn dnd_worker_with(cfg: EngineConfig) -> DndWorker {
+        let (mut w, clock, host) = worker(EngineConfig { dnd_auto: true, ..cfg });
+        let probe = Arc::new(FakeProbe::new());
+        w.probe = Some(probe.clone());
+        (w, clock, host, probe)
+    }
+
+    fn dnd_worker() -> DndWorker {
+        dnd_worker_with(quiet_cfg())
+    }
+
+    /// Avanza el reloj a `t` y da un paso del motor (sin órdenes).
+    fn at(w: &mut Worker<Fake>, clock: &FakeClock, t: Ms) {
+        clock.set(t);
+        w.tick(t, vec![]);
+    }
+
+    fn at_with(w: &mut Worker<Fake>, clock: &FakeClock, t: Ms, cmds: Vec<Cmd>) {
+        clock.set(t);
+        w.tick(t, cmds);
+    }
+
+    fn busy() -> Result<NotifState, ProbeError> {
+        Ok(NotifState::Busy)
+    }
+    fn calm() -> Result<NotifState, ProbeError> {
+        Ok(NotifState::AcceptsNotifications)
+    }
+
+    #[test]
+    fn the_first_poll_is_immediate_and_then_every_interval_inside_the_single_scheduler() {
+        let (mut w, clock, _h, probe) = dnd_worker();
+        at(&mut w, &clock, 0);
+        assert_eq!(probe.notification_calls(), 1, "lectura inmediata al abrirse la puerta");
+        assert_eq!(next_deadline(&w, 0), Some(2_500), "el sondeo es el mínimo (Idle vence a los 600 s)");
+        assert_eq!(w.wait_timeout(), Some(Duration::from_millis(2_500)));
+        at(&mut w, &clock, 1_000);
+        assert_eq!(probe.notification_calls(), 1, "antes del plazo no se vuelve a leer");
+        at(&mut w, &clock, 2_500);
+        assert_eq!(probe.notification_calls(), 2);
+        assert_eq!(next_deadline(&w, 2_500), Some(5_000));
+    }
+
+    #[test]
+    fn without_a_probe_or_with_the_switch_off_nothing_is_polled() {
+        let (mut w, clock, _h) = worker(EngineConfig { dnd_auto: true, ..quiet_cfg() }); // sin sonda
+        at(&mut w, &clock, 0);
+        assert_eq!(next_deadline(&w, 0), Some(600_000));
+        let (mut w, clock, _h, probe) = dnd_worker_with(EngineConfig { dnd_auto: false, ..quiet_cfg() });
+        w.dnd.enabled = false;
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 10_000);
+        assert_eq!(probe.notification_calls(), 0);
+        assert_eq!(next_deadline(&w, 10_000), Some(600_000));
+    }
+
+    #[test]
+    fn two_consecutive_busy_reads_suppress_and_hide_the_window() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        assert!(!w.fsm.view().suppressed, "una lectura no basta");
+        assert!(host.visible.load(Ordering::SeqCst));
+        at(&mut w, &clock, 2_500);
+        let v = w.fsm.view();
+        assert!(v.suppressed && !v.hidden && !v.paused, "hidden/paused conservan su significado");
+        assert!(!host.visible.load(Ordering::SeqCst), "ventana oculta");
+        assert!(host.views.lock().unwrap().last().unwrap().suppressed, "la vista emitida lo refleja");
+        // suprimida: la FSM está suspendida pero el sondeo sigue (recuperación)
+        assert!(w.fsm.is_suspended());
+        assert_eq!(next_deadline(&w, 2_500), Some(5_000));
+    }
+
+    #[test]
+    fn two_consecutive_calm_reads_end_the_episode_and_show_the_window_again() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        probe.set_notification_state(calm());
+        at(&mut w, &clock, 5_000);
+        assert!(w.fsm.view().suppressed, "una lectura negativa no basta");
+        assert!(!host.visible.load(Ordering::SeqCst));
+        at(&mut w, &clock, 7_500);
+        assert!(!w.fsm.view().suppressed);
+        assert!(host.visible.load(Ordering::SeqCst), "reaparece");
+    }
+
+    #[test]
+    fn states_that_do_not_suppress_never_hide_the_window() {
+        for st in [NotifState::NotPresent, NotifState::QuietTime, NotifState::App, NotifState::Other(9)] {
+            let (mut w, clock, host, probe) = dnd_worker();
+            probe.set_notification_state(Ok(st));
+            for k in 0..8 {
+                at(&mut w, &clock, k * 2_500);
+            }
+            assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst), "{st:?}");
+            assert_eq!(probe.notification_calls(), 8, "{st:?}: se sigue sondeando");
+        }
+    }
+
+    #[test]
+    fn a_probe_error_never_suppresses_and_two_errors_do_not_end_an_episode() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(Err(ProbeError::CallFailed));
+        for k in 0..6 {
+            at(&mut w, &clock, k * 2_500);
+        }
+        assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst), "errores: nunca se suprime");
+        // episodio real; luego dos errores seguidos y una lectura válida positiva: sigue suprimida
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 15_000);
+        at(&mut w, &clock, 17_500);
+        assert!(w.fsm.view().suppressed);
+        probe.set_notification_state(Err(ProbeError::CallFailed));
+        at(&mut w, &clock, 20_000);
+        at(&mut w, &clock, 22_500);
+        assert!(w.fsm.view().suppressed, "dos errores no terminan el episodio");
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 25_000);
+        assert!(w.fsm.view().suppressed);
+    }
+
+    /// Caso 10 de §5.2: 3 errores consecutivos durante un episodio lo terminan (falla hacia visible).
+    #[test]
+    fn three_consecutive_probe_errors_end_the_episode_and_make_the_window_visible() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        assert!(!host.visible.load(Ordering::SeqCst));
+        probe.set_notification_state(Err(ProbeError::CallFailed));
+        at(&mut w, &clock, 5_000);
+        at(&mut w, &clock, 7_500);
+        assert!(w.fsm.view().suppressed);
+        at(&mut w, &clock, 10_000);
+        assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst), "tercer error: termina y reaparece");
+        // y si la sonda vuelve a dar Busy, hacen falta de nuevo dos lecturas
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 12_500);
+        assert!(!w.fsm.view().suppressed);
+        at(&mut w, &clock, 15_000);
+        assert!(w.fsm.view().suppressed);
+    }
+
+    #[test]
+    fn a_state_change_during_the_geometry_debounce_is_handled_without_losing_either() {
+        let cfg = EngineConfig { dnd_poll_ms: 100, ..quiet_cfg() };
+        let (mut w, clock, host, probe) = dnd_worker_with(cfg);
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0); // lectura 1
+        at_with(&mut w, &clock, 100, vec![Cmd::GeometryChanged]); // lectura 2 → supresión; debounce vence a los 400
+        assert!(w.fsm.view().suppressed);
+        assert_eq!(next_deadline(&w, 100), Some(200), "mínimo entre el sondeo (200) y el debounce (400)");
+        probe.set_notification_state(calm());
+        at(&mut w, &clock, 200);
+        at(&mut w, &clock, 300); // dos lecturas tranquilas DENTRO del debounce → reaparece
+        assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst));
+        assert!(w.geom_due.is_some(), "el aviso de geometría sigue pendiente");
+        let before = host.monitor_calls.load(Ordering::SeqCst);
+        at(&mut w, &clock, 400);
+        assert!(w.geom_due.is_none(), "el debounce se procesa a su hora");
+        assert!(host.monitor_calls.load(Ordering::SeqCst) > before, "y relee los monitores");
+        assert!(!w.fsm.view().suppressed);
+    }
+
+    #[test]
+    fn show_anyway_overrides_only_the_current_episode_and_the_next_one_suppresses_again() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        assert!(!host.visible.load(Ordering::SeqCst));
+        at_with(&mut w, &clock, 3_000, vec![Cmd::DndOverride]);
+        assert!(host.visible.load(Ordering::SeqCst), "anulada: visible");
+        assert!(!w.fsm.view().suppressed, "ya no hay supresión en vigor");
+        // el juego sigue en pantalla: más lecturas positivas no vuelven a ocultarla durante este episodio
+        at(&mut w, &clock, 5_000);
+        at(&mut w, &clock, 7_500);
+        assert!(host.visible.load(Ordering::SeqCst));
+        assert!(w.dnd.det.is_suppressing(), "el detector sigue viendo el episodio");
+        // fin del episodio: se limpia la anulación
+        probe.set_notification_state(calm());
+        at(&mut w, &clock, 10_000);
+        at(&mut w, &clock, 12_500);
+        assert!(!w.dnd.det.is_suppressing() && !w.fsm.is_suppression_episode());
+        // episodio nuevo: vuelve a suprimir
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 15_000);
+        at(&mut w, &clock, 17_500);
+        assert!(w.fsm.view().suppressed && !host.visible.load(Ordering::SeqCst), "la anulación no sobrevivió al episodio");
+    }
+
+    #[test]
+    fn hiding_or_pausing_by_hand_stops_the_polling_completely() {
+        for cmd in [Cmd::Hidden(true), Cmd::Pause(true), Cmd::TogglePause] {
+            let (mut w, clock, _h, probe) = dnd_worker();
+            at(&mut w, &clock, 0);
+            let calls = probe.notification_calls();
+            at_with(&mut w, &clock, 1_000, vec![cmd]);
+            assert_eq!(next_deadline(&w, 1_000), None, "{cmd:?}: ningún plazo de sondeo");
+            assert_eq!(w.wait_timeout(), None, "{cmd:?}: el hilo duerme indefinidamente");
+            for k in 1..20 {
+                at(&mut w, &clock, 1_000 + k * 60_000);
+            }
+            assert_eq!(probe.notification_calls(), calls, "{cmd:?}: cero lecturas mientras dure");
+        }
+    }
+
+    #[test]
+    fn showing_or_resuming_restarts_the_polling_with_an_immediate_read_and_fresh_streaks() {
+        let (mut w, clock, _h, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0); // lectura positiva 1
+        at_with(&mut w, &clock, 100, vec![Cmd::Pause(true)]);
+        let calls = probe.notification_calls();
+        at_with(&mut w, &clock, 50_000, vec![Cmd::Pause(false)]);
+        assert_eq!(probe.notification_calls(), calls + 1, "lectura inmediata al reanudar");
+        assert!(!w.fsm.view().suppressed, "la lectura anterior a la pausa no cuenta: hace falta una segunda");
+        at(&mut w, &clock, 52_500);
+        assert!(w.fsm.view().suppressed);
+    }
+
+    #[test]
+    fn hiding_by_hand_during_an_episode_then_showing_overrides_it_and_paused_stays() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        at_with(&mut w, &clock, 3_000, vec![Cmd::Pause(true), Cmd::Hidden(true)]);
+        let calls = probe.notification_calls();
+        at(&mut w, &clock, 60_000);
+        assert_eq!(probe.notification_calls(), calls, "oculta y pausada: sin sondeo aunque haya episodio");
+        at_with(&mut w, &clock, 61_000, vec![Cmd::Hidden(false)]);
+        let v = w.fsm.view();
+        assert!(v.paused && !v.hidden, "Mostrar no quita la pausa");
+        assert!(host.visible.load(Ordering::SeqCst), "Mostrar con supresión en vigor la anula (caso 8)");
+        assert!(!v.suppressed);
+    }
+
+    #[test]
+    fn turning_the_switch_off_ends_any_episode_immediately_and_stops_polling() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        assert!(!host.visible.load(Ordering::SeqCst));
+        let calls = probe.notification_calls();
+        at_with(&mut w, &clock, 3_000, vec![Cmd::DndAuto(false)]);
+        assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst), "caso 9: suppressed=false inmediato");
+        assert!(!w.dnd.det.is_suppressing());
+        assert_eq!(next_deadline(&w, 3_000), Some(600_500), "sin sondeo: solo el plazo de Idle (retomado: 500 ms de supresión)");
+        for k in 1..10 {
+            at(&mut w, &clock, 3_000 + k * 2_500);
+        }
+        assert_eq!(probe.notification_calls(), calls, "apagado: cero lecturas");
+        // encenderlo de nuevo: lectura inmediata y cadencia normal
+        at_with(&mut w, &clock, 40_000, vec![Cmd::DndAuto(true)]);
+        assert_eq!(probe.notification_calls(), calls + 1);
+        assert_eq!(next_deadline(&w, 40_000), Some(42_500));
+    }
+
+    #[test]
+    fn turning_the_switch_off_also_clears_an_override() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        at_with(&mut w, &clock, 3_000, vec![Cmd::DndOverride]);
+        at_with(&mut w, &clock, 3_500, vec![Cmd::DndAuto(false)]);
+        at_with(&mut w, &clock, 4_000, vec![Cmd::DndAuto(true)]);
+        // activado otra vez con el juego aún en pantalla: se necesitan de nuevo dos lecturas y vuelve a suprimir
+        at(&mut w, &clock, 6_500);
+        assert!(w.fsm.view().suppressed && !host.visible.load(Ordering::SeqCst), "la anulación anterior no se arrastra");
+    }
+
+    #[test]
+    fn a_diag_injected_suppression_is_not_ended_by_the_real_probe_but_the_switch_ends_it() {
+        let (mut w, clock, host, probe) = dnd_worker();
+        probe.set_notification_state(calm());
+        at_with(&mut w, &clock, 0, vec![Cmd::Suppressed(true)]);
+        for k in 1..6 {
+            at(&mut w, &clock, k * 2_500);
+        }
+        assert!(w.fsm.view().suppressed, "el detector no abrió el episodio, así que no lo cierra");
+        assert!(probe.notification_calls() >= 6, "pero sí sondea mientras está suprimida (coste medible)");
+        at_with(&mut w, &clock, 20_000, vec![Cmd::DndAuto(false)]);
+        assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn after_a_long_suppression_the_frozen_deadlines_resume_instead_of_firing_at_once() {
+        // plazos por defecto (Idle 20–45 s) y mensajes activados
+        let cfg = EngineConfig { seed: Some(3), ..EngineConfig::default() };
+        let (mut w, clock, host, probe) = dnd_worker_with(cfg);
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0); // lectura positiva 1
+        let before = w.fsm.next_wakeup().expect("hay un plazo de Idle");
+        assert!(before > 2_500, "el plazo de Idle es de decenas de segundos: {before}");
+        // supresión a partir de t=2,5 s; Idle habría vencido mucho antes de 10 minutos
+        at(&mut w, &clock, 2_500); // lectura positiva 2
+        assert!(w.fsm.view().suppressed);
+        let rem = before - 2_500;
+        let (b0, e0, v0) = (w.fsm.behavior(), w.fsm.view().expression, w.fsm.view().version);
+        // 10 minutos suprimida: el sondeo corre y NADA más cambia
+        let mut t = 2_500;
+        while t < 600_000 {
+            t += 2_500;
+            at(&mut w, &clock, t);
+        }
+        assert!(w.fsm.view().suppressed);
+        assert_eq!((w.fsm.behavior(), w.fsm.view().expression, w.fsm.view().version), (b0, e0, v0), "FSM congelada");
+        assert_eq!(host.views.lock().unwrap().iter().filter(|v| v.message.is_some()).count(), 0, "sin mensajes");
+        // fin del episodio
+        probe.set_notification_state(calm());
+        t += 2_500;
+        at(&mut w, &clock, t);
+        t += 2_500;
+        at(&mut w, &clock, t); // dos lecturas tranquilas: reaparece
+        assert!(!w.fsm.view().suppressed && host.visible.load(Ordering::SeqCst));
+        assert_eq!(w.fsm.behavior(), b0, "no salta a otro comportamiento al reaparecer");
+        assert_eq!(w.fsm.next_wakeup(), Some(t + rem), "el plazo congelado se retoma: queda lo que faltaba, no 0");
+        assert!(w.fsm.view().message.is_none(), "sin mensaje inmediato al reaparecer");
+        // y durante el segundo siguiente tampoco habla
+        at(&mut w, &clock, t + 1_000);
+        assert!(w.fsm.view().message.is_none() && w.talker.message().is_none(), "el cooldown del hablante no disparó de golpe");
+        assert_eq!(w.fsm.behavior(), b0);
     }
 }

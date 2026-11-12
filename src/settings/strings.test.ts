@@ -48,9 +48,9 @@ describe("textos es/en", () => {
     expect(STRINGS.en.restartBanner).toMatch(/next time/i);
   });
 
-  it("la sección de privacidad no afirma funciones que aún no existen", () => {
+  it("la sección de privacidad no afirma funciones que aún no existen (No molestar ya existe desde E4b)", () => {
     const all = [...paths(STRINGS.es.privacy), ...paths(STRINGS.en.privacy)].map(([, v]) => v.toLowerCase()).join("\n");
-    for (const future of ["no molestar", "do not disturb", "dormir", "sleep", "proximidad", "proximity", "franja", "time of day", "getlastinputinfo", "hora local", "local time"]) {
+    for (const future of ["dormir", "sleep", "proximidad", "proximity", "franja", "time of day", "getlastinputinfo", "hora local", "local time"]) {
       expect(all, future).not.toContain(future);
     }
   });

@@ -63,8 +63,8 @@ fn get_settings(store: tauri::State<'_, Arc<SettingsStore>>) -> Settings {
 
 /// E2 · Cambia UN ajuste. Rust es la única fuente de verdad: valida clave y tipo, sanea rangos y
 /// devuelve las preferencias aplicadas; si hubo un cambio real, emite `settings://changed` a la
-/// ventana `settings`. El frontend no decide nada. No altera el motor (los interruptores nuevos aún
-/// no tienen efecto; el resto se aplica al reiniciar, como en v0.1.0).
+/// ventana `settings`. El frontend no decide nada. Solo `dnd_auto_enabled` actúa sobre el motor en vivo
+/// (E4b, ver `live_command`); el resto de ajustes se aplica al reiniciar, como en v0.1.0.
 #[tauri::command]
 fn set_setting(
     app: tauri::AppHandle,
@@ -85,11 +85,22 @@ pub(crate) fn apply_setting(
 ) -> Result<Settings, String> {
     let (applied, changed) = store.set_setting(key, value).map_err(|e| e.to_string())?;
     if changed {
+        if let Some(cmd) = live_command(key, &applied) {
+            if let Some(engine) = app.try_state::<Engine>() {
+                engine.send(cmd);
+            }
+        }
         if let Err(e) = app.emit_to(settings_window::LABEL, settings::EVENT_CHANGED, &applied) {
             eprintln!("[miel] no se pudo emitir el cambio de ajustes: {e}");
         }
     }
     Ok(applied)
+}
+
+/// Orden que un ajuste cambiado manda al motor EN VIVO. Hoy solo «No molestar automático» (E4b): apagarlo termina
+/// el episodio y detiene el sondeo, encenderlo lo reanuda. Todos los demás ajustes se aplican al reiniciar.
+fn live_command(key: &str, applied: &Settings) -> Option<Cmd> {
+    (key == "dnd_auto_enabled").then_some(Cmd::DndAuto(applied.dnd_auto_enabled))
 }
 
 /// Informe de un error del frontend (React/WebView2). Se sanea, se limita en cantidad y tamaño y
@@ -151,6 +162,23 @@ fn watch_displays(app: &tauri::AppHandle, win: &WebviewWindow) {
     let _ = (app, win);
 }
 
+/// Sonda del sistema del motor: `WindowsProbe` (solo lectura: `SHQueryUserNotificationState`). Con `diag`,
+/// `MIEL_DIAG_NOTIF` la sustituye por una sonda programada (no se consulta a Windows).
+fn system_probe() -> Option<Arc<dyn mascot::probe::SystemProbe>> {
+    #[cfg(any(debug_assertions, feature = "diag"))]
+    if let Some(p) = diag::scripted_probe_from_env() {
+        return Some(p);
+    }
+    #[cfg(windows)]
+    {
+        Some(Arc::new(windows_probe::WindowsProbe::new()))
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 /// Configuración del motor a partir de las preferencias. Con `DIAG`, `MIEL_FAST=1` acelera los
 /// tiempos para observar todos los comportamientos en segundos (no existe en el instalador).
 fn engine_config(s: &Settings) -> EngineConfig {
@@ -159,6 +187,7 @@ fn engine_config(s: &Settings) -> EngineConfig {
         anchor_frac: window::anchor_frac(s.pet_size),
         initial_follow: s.follow_enabled,
         initial_paused: s.paused,
+        dnd_auto: s.dnd_auto_enabled,
         talker: TalkerConfig {
             enabled: s.messages_enabled,
             cooldown: u64::from(s.message_interval_minutes) * 60_000,
@@ -181,7 +210,20 @@ fn engine_config(s: &Settings) -> EngineConfig {
         };
         cfg.talker = TalkerConfig { cooldown: 12_000, initial_delay: (3_000, 3_000), ..cfg.talker };
     }
+    // `MIEL_SEED=<entero>`: fija el RNG del motor para reproducir una ejecución (equivalencia entre binarios,
+    // pruebas con `diag`). Solo existe en compilaciones de depuración o con `--features diag`: el atributo
+    // `cfg` (no un `if`) garantiza que la cadena no llega al instalador.
+    #[cfg(any(debug_assertions, feature = "diag"))]
+    {
+        cfg.seed = diag_seed(std::env::var("MIEL_SEED").ok().as_deref()).or(cfg.seed);
+    }
     cfg
+}
+
+/// Interpreta `MIEL_SEED`: un entero sin signo de 64 bits (se ignoran espacios); cualquier otra cosa = sin semilla.
+#[cfg(any(debug_assertions, feature = "diag"))]
+fn diag_seed(v: Option<&str>) -> Option<u64> {
+    v.and_then(|s| s.trim().parse().ok())
 }
 
 fn describe_outcome(o: &LoadOutcome) -> Option<String> {
@@ -247,7 +289,12 @@ pub fn run() {
 
             prepare(&win, prefs.pet_size);
             let host = Arc::new(TauriHost::new(app.handle().clone(), win.clone(), Arc::clone(&store)));
-            let engine = Engine::spawn(host, engine_config(&prefs));
+            let engine = Engine::spawn_with(
+                host,
+                engine_config(&prefs),
+                Arc::new(mascot::clock::SystemClock::new()),
+                system_probe(),
+            );
             let initial = engine.view();
             if DIAG {
                 eprintln!(
@@ -335,6 +382,40 @@ mod tests {
     }
 
     #[test]
+    fn only_the_dnd_switch_acts_on_the_running_engine() {
+        let on = Settings::default();
+        let off = Settings { dnd_auto_enabled: false, ..Settings::default() };
+        assert_eq!(live_command("dnd_auto_enabled", &on), Some(Cmd::DndAuto(true)));
+        assert_eq!(live_command("dnd_auto_enabled", &off), Some(Cmd::DndAuto(false)));
+        for k in settings::SETTABLE_KEYS.iter().filter(|k| **k != "dnd_auto_enabled") {
+            assert_eq!(live_command(k, &off), None, "{k}: se aplica al reiniciar");
+        }
+    }
+
+    #[cfg(any(debug_assertions, feature = "diag"))]
+    #[test]
+    fn miel_seed_is_a_plain_unsigned_integer_and_anything_else_is_ignored() {
+        assert_eq!(diag_seed(Some("42")), Some(42));
+        assert_eq!(diag_seed(Some(" 7 ")), Some(7));
+        assert_eq!(diag_seed(Some("18446744073709551615")), Some(u64::MAX));
+        for bad in ["", "abc", "-1", "1.5", "18446744073709551616"] {
+            assert_eq!(diag_seed(Some(bad)), None, "{bad:?}");
+        }
+        assert_eq!(diag_seed(None), None);
+    }
+
+    #[cfg(any(debug_assertions, feature = "diag"))]
+    #[test]
+    fn same_seed_gives_the_same_engine_configuration_seed() {
+        // `engine_config` no lee el entorno en las pruebas de forma determinista (las pruebas corren en paralelo):
+        // la semilla viaja por `EngineConfig::seed`, que el motor usa tal cual para FSM y hablante.
+        let a = EngineConfig { seed: diag_seed(Some("42")), ..EngineConfig::default() };
+        let b = EngineConfig { seed: diag_seed(Some("42")), ..EngineConfig::default() };
+        assert_eq!(a.seed, Some(42));
+        assert_eq!(a.seed, b.seed);
+    }
+
+    #[test]
     fn engine_config_reflects_every_preference() {
         let s = Settings {
             follow_enabled: false,
@@ -349,6 +430,8 @@ mod tests {
         assert_eq!(c.speed, 400.0);
         assert!(!c.initial_follow && c.initial_paused);
         assert!(!c.talker.enabled);
+        assert!(c.dnd_auto, "dnd_auto_enabled por defecto: activado");
+        assert!(!engine_config(&Settings { dnd_auto_enabled: false, ..Settings::default() }).dnd_auto);
         assert_eq!(c.talker.cooldown, 30 * 60_000);
         assert_eq!(c.anchor_frac, window::anchor_frac(128));
     }

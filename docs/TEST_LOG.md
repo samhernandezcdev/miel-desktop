@@ -471,3 +471,73 @@ Un `settings.json` que empieza con BOM UTF-8 se cargaba como corrupto (se descub
 | Rest | 3,09 [2,90–3,32] | 3,17 [3,06–3,40] | +2,6 % |
 
 Lectura: Rest dentro de ±10 %. Idle queda 0,6 puntos por debajo (−10,8 %, en dirección de menos CPU); el rango de `e3` es amplio (una repetición a 7,71) y se solapa con el de `e4a`; sin esa repetición la diferencia es −7,4 % (Rest +7,8 %). Con 4 repeticiones y resolución de ≈ ±10 % no se afirma ni mejora ni empeoramiento. Incidencia: la primera ejecución de `e3` (`e3-r1`) arrancó con valores por defecto porque `e3run.ps1` sembró `settings.json` con BOM y el binario de E3 lo trató como corrupto (el defecto del Bloque A); el resto de ejecuciones releyeron el archivo ya reescrito sin BOM. Sus datos no se descartaron (mensajes activos, que se excluyen de Idle/Rest por etiqueta); la comparación sin esa repetición se da arriba.
+
+## v0.2.0 · E4b: No molestar automático (2026-11-11)
+
+### Preparación
+- **Las pruebas de BOM sí pueden fallar.** Se quitó a mano (sin Git) la corrección de BOM de `src-tauri/src/settings.rs` y se ejecutaron las pruebas: fallan `bom_with_schema_1_loads_like_without_it`, `bom_with_schema_2_loads_clean_without_copies_or_rewrite` y `saving_never_writes_a_bom_even_after_loading_one_that_had_it` (ida y vuelta); las otras dos (`bom_alone…`, BOM con contenido corrupto) siguen en verde porque ese comportamiento ya era el correcto sin la corrección. Se restauró editando de vuelta: SHA-256 antes = después = `1e7a3ae4a3bb388b089129568f1ca684c2ef2138b027fd608b988e5f14e6b141` y las 44 pruebas de `settings` en verde.
+- `tools/common.ps1` (`Write-Utf8NoBom`, `Clear-PersonalPaths*`): todo script que siembra `settings.json` lo escribe **sin BOM** (`e3run.ps1`, `eqrun.ps1`, `e0b/*`, `e4/*`) y sanea rutas en el origen.
+- `MIEL_SEED` es oficial **solo con `diag`/`debug`** (como `MIEL_FAKE_HOUR`), con pruebas. Comprobado: `MIEL_SEED`, `MIEL_DIAG_NOTIF`, `MIEL_DIAG_SCRIPT` y `MIEL_FAKE_HOUR` aparecen 0 veces en el `miel.exe` de `cargo build --release --features tauri/custom-protocol`.
+- `tools/check_svg_hashes.py` (SHA-256 por archivo de los 19 SVG contra `tools/svg_hashes.json`; ignora solo CRLF; `--self-test` negativo) y `tools/check_personal.py` (nombre de usuario y equipo leídos del entorno en ejecución, nunca escritos; rutas `C:\Users\<nombre>`, correos, IPv4 no loopback, IPv6 locales; revisa staging y archivos sin seguimiento; `--self-test`).
+
+### Qué hace E4b
+`mascot/dnd.rs` (detector puro: solo `QUNS_BUSY`, `QUNS_RUNNING_D3D_FULL_SCREEN` y `QUNS_PRESENTATION_MODE` suprimen; 2 lecturas para entrar y 2 para salir; 3 errores seguidos terminan el episodio; un error nunca suprime y rompe las rachas). El motor sondea cada 2,5 s **solo** con `dnd_auto_enabled` y sin que la persona haya ocultado/pausado a Miel (también mientras está suprimida), dentro de `next_deadline` (mismo hilo y `Condvar`; sin hilo ni temporizador nuevos). La anulación («Mostrar de todos modos») vale por episodio y se borra al terminar; al terminar reaparece sin mensaje inmediato y los plazos congelados se reanudan. `set_setting("dnd_auto_enabled")` envía `Cmd::DndAuto` y actúa al instante (apagar termina el episodio y detiene el sondeo). UI: interruptor «No molestar automático» (es/en, «se aplica al instante»), frase de privacidad y elemento de bandeja «Mostrar de todos modos» solo con supresión y sin ocultación manual.
+
+### Resultados automáticos
+| Comprobación | Resultado |
+|---|---|
+| `cargo test` | 276 + 5 + 7 (antes 235 + 5 + 5); 1 prueba `ignored` (microbenchmark de la consulta) |
+| clippy `-D warnings`, `tsc`, `check:dist` (2 entradas), `licenses:check` | OK |
+| vitest | 126 (antes 118) |
+| `check_privacy.py` + `--self-test` | OK (el autotest falla ante las entradas indebidas, incluida la nueva) |
+| `check_svg_hashes.py` + `--self-test`, `check_personal.py` + `--self-test` | OK |
+| Diff de SVG / CSS de la mascota | vacío |
+| Coste de una consulta `SHQueryUserNotificationState` (prueba ignorada, `windows_probe.rs`) | ≈ 52 µs por llamada → cada 2,5 s ≈ 0,002 % de un núcleo |
+
+### Aserciones existentes modificadas (autorizado)
+- `src-tauri/src/tray.rs`: los dos literales `MenuModel{…}` de pruebas existentes ganan los campos `show_anyway`/`tooltip`; el `FakeSink` implementa los métodos nuevos de `MenuSink`; la prueba de modelo de supresión se **sustituyó** (antes esperaba que el menú no cambiara con la supresión; ahora aparece «Mostrar de todos modos»). Las demás se añadieron. `tests/tray_menu.rs`: solo import y 2 pruebas nuevas.
+- vitest (consecuencia del interruptor nuevo): `SettingsApp.test.tsx` — «NO muestra…» (interruptores 2→3 y se retiró la palabra prohibida), controles 7→8, `h2` 4→5, `fakeRust` acepta booleano; `strings.test.ts` — lista de palabras prohibidas de la sección Privacidad.
+
+### Verificación con la app REAL (sonda programada, sin tocar el sistema)
+`MIEL_DIAG_NOTIF` inyecta la secuencia de estados en el motor real (`busy@15,ok@45,busy@60,ok@110,busy@125,ok@175`), `MIEL_DIAG_SCRIPT` (`override@75,hide@165,show@185`) y `MIEL_DIAG_UI_SCRIPT` (`set:dnd_auto_enabled=false@140,…=true@150`). Visibilidad de la ventana cada 0,5 s (`tools/e4/verify_dnd.ps1`, `analyze_dnd.py`; datos `docs/measurements/v020-e4b-verify*`): **22/22**: se oculta tras 2 lecturas y reaparece tras 2; «Mostrar de todos modos» la devuelve y la anulación no sobrevive al episodio; apagar el interruptor en vivo termina el episodio en ≤ 3 s y sin sondeo; encenderlo reanuda; ocultar a mano detiene el sondeo (el cambio `ok@175` no se observó hasta mostrar a los 185 s). **No verificado automáticamente:** el elemento nativo de la bandeja y su *tooltip* (el *runtime* simulado no los expone; solo se probó la estructura del menú) → matriz manual.
+
+### Medición (`tools/e4/e4run.ps1`; `miel.exe` SOLO, sin WebView2; producción + `diag`, `MIEL_FAST=1`, `follow_off@1`, 4 repeticiones × 200 s intercaladas; datos `docs/measurements/v020-e4b-*`)
+CPU en % de un núcleo, mediana de medias por repetición:
+
+| Variante | Estado | CPU | Rango |
+|---|---|---|---|
+| `dnd_on` (sondeo activo) | Idle | 0,000 | 0,000–0,000 |
+| `dnd_off` | Idle | 0,000 | 0,000–0,050 |
+| `dnd_on` | Rest | 0,000 | 0,000–0,000 |
+| `dnd_off` | Rest | 0,000 | 0,000–0,215 |
+| suprimida por `diag` (sondeo real de recuperación) | fijo | 0,000 | 0,000–0,009 |
+| oculta por la persona | fijo | 0,000 | 0,000–0,027 |
+| pausada por la persona | fijo | 0,000 | 0,000–0,083 |
+
+Lectura honesta: el proceso raíz queda por debajo de la resolución del contador de CPU de Windows (ticks de ~15,6 ms por muestra de 1 s ⇒ ≈ 0,1 %); **no hay diferencia medible** entre sondeo encendido y apagado, ni en suprimida, ni en oculta/pausada. Es coherente con el coste de la consulta (≈ 52 µs cada 2,5 s ≈ 0,002 %), pero **la medición no puede demostrar** que el coste sea cero ni distinguir diferencias menores de ≈ 0,1 %; el criterio ±10 % no es aplicable a cifras en 0,0 % y no se interpreta más. Los picos de 0,05–0,2 % en una repetición son ruido de un solo tick (aparecen también con el sondeo apagado). Límites: 165 Hz, `MIEL_FAST=1`, solo CPU del proceso raíz (no memoria ni WebView2), la «supresión» es la de `diag` pero el sondeo es la llamada real a Windows. `settings.json` ausente al terminar, sin procesos de Miel sobrantes.
+
+### Desviaciones
+1. «Mostrar de todos modos» solo aparece con `suppressed && !hidden` (según el encargo); el plan D7 lo permitía también ocultando: si la persona oculta, «Mostrar» ya existe.
+2. No hay casilla de bandeja para el interruptor de No molestar (solo en ajustes).
+3. Al reanudar tras ocultar/pausar a mano, el sondeo hace una lectura inmediata con rachas nuevas (2 lecturas de histéresis); no se recalcula antes de renderizar.
+4. Se modificaron aserciones de vitest además de las de bandeja (listadas arriba).
+5. `MIEL_SEED` y `MIEL_DIAG_NOTIF` solo existen con `diag`/`debug`.
+6. Tooltip y elemento nativo de la bandeja: solo verificados a nivel de modelo/mock.
+7. `e3run.ps1` sembraba con BOM (corregido).
+
+### Matriz de pruebas MANUALES (pendiente de ejecutar por la persona; rellenar «Resultado»)
+Preparación: ajustes → «No molestar automático» activado; Miel visible y sin ocultar/pausar a mano. Retraso esperado: ~5 s para ocultarse y ~5 s para reaparecer (2 lecturas cada 2,5 s).
+
+| # | Caso | Esperado | Resultado |
+|---|---|---|---|
+| 1 | Juego en pantalla completa **exclusiva** (Direct3D) | Miel se oculta en ~5 s; al salir reaparece en ~5 s sin mensaje inmediato; «Mostrar de todos modos» aparece en la bandeja mientras dura | |
+| 2 | Juego en ventana **sin bordes** | Puede NO ocultarse (Windows no lo marca como pantalla completa exclusiva); anotar el comportamiento. No es un fallo | |
+| 3 | Vídeo del navegador con **F11** | Puede ocultarse (Windows lo trata como aplicación a pantalla completa); reaparece al salir | |
+| 4 | **PowerPoint** en modo presentación | Se oculta; reaparece al terminar la presentación | |
+| 5 | Pantalla completa en un **segundo monitor** con Miel en el primero | Windows informa del estado global, no por monitor: puede ocultarla aunque esté en otro monitor (esperado, documentado en PRIVACY); anotarlo | |
+| 6 | **Ventana de ajustes abierta** durante una supresión | Miel se oculta pero la ventana de ajustes sigue abierta y utilizable; apagar el interruptor hace que Miel reaparezca al instante; encenderlo con la pantalla completa aún activa la vuelve a ocultar en ~5 s | |
+| 7 | «Mostrar de todos modos» durante 1–4 | Miel reaparece y sigue visible hasta el fin del episodio; en el siguiente episodio vuelve a ocultarse | |
+| 8 | Ocultar a Miel a mano antes de abrir el juego | No reaparece al terminar; sin sondeo mientras está oculta | |
+
+### Comandos de verificación (desde la raíz del repositorio)
+`cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings` · `npm test` · `npx tsc --noEmit` · `npm run check:dist` · `python -I tools/check_privacy.py` y `--self-test` · `npm run licenses:check` · `python -I tools/check_svg_hashes.py` y `--self-test` · `python -I tools/check_personal.py` y `--self-test` (esta, antes de cada commit).

@@ -27,6 +27,7 @@ Miel es una aplicación **Tauri 2** (Rust + WebView2) con un frontend **React + 
 | `mascot/messages.rs` | Catálogo de frases, `Selector` (historial, categorías, `min_repeat`) y `Talker` (cooldown de 12 min, duración 4–6 s). |
 | `mascot/motion.rs`, `geometry.rs` | Cinemática con dt real (velocidad/aceleración limitadas) y geometría en píxeles físicos (monitores, DPI, coordenadas negativas, ancla descentrada). |
 | `mascot/engine.rs` | **Un único hilo** + `Condvar`. Une FSM, Talker y movimiento; sin polling en Idle/Rest/Paused/Hidden. El bucle solo espera y llama a `Worker::tick(now, cmds)`; el plazo de la espera es `next_deadline(&Worker, now)` (mínimo absoluto de FSM, hablante, movimiento y *debounce*; `None` si está oculta/en pausa/suprimida), ambos probables con `FakeClock` sin hilos. |
+| `mascot/dnd.rs` | **Detector de No molestar** (E4b): máquina de estados pura (lista blanca `BUSY`/`D3D_FULL_SCREEN`/`PRESENTATION_MODE`, histéresis 2/2, 3 errores seguidos terminan el episodio). Sin hilos: lo alimenta el motor dentro de `next_deadline`/`tick`. |
 | `mascot/host.rs` | Implementación de `Host` sobre Tauri (cursor, monitores, ventana, eventos). El motor se prueba con un `Host` falso. |
 | `tray.rs` | Icono único y menú (incluye «Ajustes…», E3); `MenuSync` aplica solo lo que cambió; `dispatch` traduce acciones en órdenes. |
 | `settings_window.rs` | Ventana de ajustes (E3): etiqueta `settings`, creada desde Rust, de instancia única, **destruida** al cerrarla; ventana normal (marco, enfocable, sin «siempre encima»). |

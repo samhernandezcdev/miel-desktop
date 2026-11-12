@@ -53,6 +53,7 @@ RUST_FORBIDDEN = [
     ("PrintWindow", r"\bPrintWindow\b"),
     ("GetWindowText*", r"\bGetWindowText\w*"),
     ("InternalGetWindowText", r"\bInternalGetWindowText\b"),
+    ("Identificar la ventana o app en primer plano (E4b)", r"\bGetForegroundWindow\b|\bGetWindowThreadProcessId\b|\bQueryFullProcessImageName\w*|\bGetModuleFileNameEx\w*|\bEnumWindows\b|\bFindWindow\w*"),
     ("UI Automation", r"\b(?:C|I)?UIAutomation\w*|\bWin32_UI_Accessibility\b|::Accessibility::"),
     ("Desktop Duplication", r"\bDuplicateOutput\d*\b|\bIDXGIOutputDuplication\w*|\bDXGI_OUTDUPL\w*"),
     ("Graphics Capture", r"\bGraphicsCapture\w*|\bIGraphicsCaptureItemInterop\b|Graphics::Capture|Graphics_Capture"),
@@ -440,6 +441,7 @@ def self_test() -> int:
             "GetAsyncKeyState": "GetAsyncKeyState", "GetKeyState": "GetKeyState",
             "GetKeyboardState": "GetKeyboardState", "BitBlt": "BitBlt", "PrintWindow": "PrintWindow",
             "GetWindowText*": "GetWindowTextW", "InternalGetWindowText": "InternalGetWindowText",
+            "Identificar la ventana o app en primer plano (E4b)": "GetForegroundWindow",
             "UI Automation": "IUIAutomation", "Desktop Duplication": "DuplicateOutput1",
             "Graphics Capture": "GraphicsCaptureSession",
         }

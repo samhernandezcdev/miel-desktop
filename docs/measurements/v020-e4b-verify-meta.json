@@ -1,0 +1,1 @@
+{"start_ms":1794434822051,"seconds":200,"exited_early":false,"notif":"busy@15,ok@45,busy@60,ok@110,busy@125,ok@175","script":"follow_off@1,override@75,hide@165,show@185","ui":"set:dnd_auto_enabled=false@140,set:dnd_auto_enabled=true@150"}

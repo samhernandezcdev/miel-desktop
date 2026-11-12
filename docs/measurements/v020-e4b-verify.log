@@ -1,0 +1,70 @@
+[miel] diag: sonda de notificaciones SIMULADA (6 pasos); no se consulta a Windows
+[miel] inicio: paused=false hidden=false follow=true pet_size=96 preferencias=Missing
+[miel] t=1794434822382 relectura de monitores
+[miel] t=1794434822415 diag: la sonda simulada devuelve Ok(AcceptsNotifications) (a los 0 s)
+[miel] get_view -> v0
+[miel] diag: FollowEnabled(false) a los 1 s
+[miel] t=1794434823430 vista v1 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794434837451 diag: la sonda simulada devuelve Ok(Busy) (a los 15 s)
+[miel] No molestar: empieza la supresión
+[miel] t=1794434839974 vista v2 Idle/Idle paused=false hidden=false suppressed=true sleeping=false follow=false msg=None
+[miel] t=1794434867533 diag: la sonda simulada devuelve Ok(AcceptsNotifications) (a los 45 s)
+[miel] No molestar: termina la supresión
+[miel] t=1794434870057 relectura de monitores
+[miel] t=1794434870059 vista v3 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794434878937 vista v4 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794434878939 relectura de monitores
+[miel] t=1794434882577 diag: la sonda simulada devuelve Ok(Busy) (a los 60 s)
+[miel] t=1794434882587 relectura de monitores
+[miel] t=1794434882951 vista v5 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] No molestar: empieza la supresión
+[miel] t=1794434885089 vista v6 Rest/Resting paused=false hidden=false suppressed=true sleeping=false follow=false msg=None
+[miel] diag: DndOverride a los 75 s
+[miel] t=1794434897427 relectura de monitores
+[miel] t=1794434897429 vista v7 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794434900124 relectura de monitores
+[miel] t=1794434902638 relectura de monitores
+[miel] t=1794434905144 relectura de monitores
+[miel] t=1794434907654 relectura de monitores
+[miel] t=1794434910157 relectura de monitores
+[miel] t=1794434912662 relectura de monitores
+[miel] t=1794434915165 relectura de monitores
+[miel] t=1794434917667 relectura de monitores
+[miel] t=1794434920172 relectura de monitores
+[miel] t=1794434922680 relectura de monitores
+[miel] t=1794434925189 relectura de monitores
+[miel] t=1794434927703 relectura de monitores
+[miel] t=1794434930206 relectura de monitores
+[miel] t=1794434932718 diag: la sonda simulada devuelve Ok(AcceptsNotifications) (a los 110 s)
+[miel] t=1794434932727 relectura de monitores
+[miel] No molestar: termina la supresión
+[miel] t=1794434935237 relectura de monitores
+[miel] t=1794434937742 relectura de monitores
+[miel] t=1794434940244 relectura de monitores
+[miel] t=1794434942754 relectura de monitores
+[miel] t=1794434945262 relectura de monitores
+[miel] t=1794434947767 diag: la sonda simulada devuelve Ok(Busy) (a los 125 s)
+[miel] t=1794434947777 relectura de monitores
+[miel] No molestar: empieza la supresión
+[miel] t=1794434950287 vista v8 Rest/Resting paused=false hidden=false suppressed=true sleeping=false follow=false msg=None
+[miel] t=1794434962421 diag: Set("dnd_auto_enabled", Bool(false)) a los 140 s
+[miel] diag: set dnd_auto_enabled aplicado
+[miel] t=1794434962436 relectura de monitores
+[miel] t=1794434962438 vista v9 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794434972422 diag: Set("dnd_auto_enabled", Bool(true)) a los 150 s
+[miel] diag: set dnd_auto_enabled aplicado
+[miel] t=1794434972428 relectura de monitores
+[miel] No molestar: empieza la supresión
+[miel] t=1794434974937 vista v10 Rest/Resting paused=false hidden=false suppressed=true sleeping=false follow=false msg=None
+[miel] diag: Hidden(true) a los 165 s
+[miel] t=1794434987423 vista v11 Rest/Resting paused=false hidden=true suppressed=true sleeping=false follow=false msg=None
+[miel] diag: Hidden(false) a los 185 s
+[miel] t=1794435007433 relectura de monitores
+[miel] t=1794435007435 diag: la sonda simulada devuelve Ok(AcceptsNotifications) (a los 185 s)
+[miel] t=1794435007436 vista v12 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] No molestar: termina la supresión
+[miel] t=1794435009948 relectura de monitores
+[miel] t=1794435012447 relectura de monitores
+[miel] t=1794435014957 relectura de monitores
+[miel] t=1794435017471 relectura de monitores
+[miel] t=1794435019681 vista v13 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None

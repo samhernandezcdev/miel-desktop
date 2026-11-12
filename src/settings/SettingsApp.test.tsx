@@ -32,7 +32,7 @@ function fakeRust(initial: SettingsData = base()) {
     get: vi.fn(async () => ({ ...state })),
     set: vi.fn(async (key, value) => {
       calls.push([key, value]);
-      const isBool = key === "messages_enabled" || key === "reduced_motion";
+      const isBool = key === "messages_enabled" || key === "reduced_motion" || key === "dnd_auto_enabled";
       if (isBool ? typeof value !== "boolean" : typeof value !== "number") throw "tipo erróneo";
       let v = value;
       if (key === "speed") v = Math.min(600, Math.max(60, value as number)); // Rust sanea el rango
@@ -99,16 +99,16 @@ describe("carga", () => {
     expect(isChecked(screen.getByLabelText(es.petSize.options["96"]))).toBe(false);
   });
 
-  it("NO muestra seguimiento ni pausa (solo bandeja) ni los interruptores nuevos de v0.2.0", async () => {
+  it("NO muestra seguimiento ni pausa (solo bandeja) ni los interruptores de v0.2.0 que aún no existen (solo No molestar, E4b)", async () => {
     await ready();
     const text = document.body.textContent ?? "";
-    // los nombres de esos ajustes no aparecen como controles: los únicos interruptores son los 2 permitidos
+    // los nombres de esos ajustes no aparecen como controles: los únicos interruptores son los 2 de v0.1.0 + No molestar
     const switches = screen.getAllByRole("switch").map((e) => e.getAttribute("id"));
-    expect(switches).toHaveLength(2);
+    expect(switches).toHaveLength(3);
     expect(screen.getAllByRole("radio")).toHaveLength(3);
     expect(screen.getAllByRole("spinbutton")).toHaveLength(2);
     expect(screen.queryByRole("button")).toBeNull();
-    for (const banned of ["No molestar", "Dormir", "Sueño", "Proximidad", "Hora del día", "dnd", "sleep", "proximity"]) {
+    for (const banned of ["Dormir", "Sueño", "Proximidad", "Hora del día", "dnd", "sleep", "proximity"]) {
       expect(text).not.toContain(banned);
     }
   });
@@ -323,7 +323,7 @@ describe("idioma y accesibilidad", () => {
   it("todos los controles son nativos, alcanzables por teclado y sin tabindex positivo", async () => {
     await ready();
     const controls = [...document.querySelectorAll("input, button, select, textarea")] as HTMLElement[];
-    expect(controls.length).toBe(7);
+    expect(controls.length).toBe(8);
     for (const c of controls) {
       expect(Number(c.getAttribute("tabindex") ?? 0), c.outerHTML).toBeLessThanOrEqual(0);
       expect(c.hasAttribute("disabled")).toBe(false);
@@ -331,7 +331,7 @@ describe("idioma y accesibilidad", () => {
     expect(document.querySelectorAll("[onclick], [style]").length).toBe(0);
     // un solo h1 y secciones con título
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(4);
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(5);
   });
 
   it("dice qué ajustes se aplican al reiniciar (banner + una nota por ajuste) y que seguimiento/pausa están en la bandeja", async () => {
@@ -347,5 +347,88 @@ describe("idioma y accesibilidad", () => {
     const section = h.closest("section")!;
     for (const item of es.privacy.items) present(within(section).getByText(item));
     present(within(section).getByText(es.privacy.storageNote));
+  });
+});
+
+describe("No molestar automático (E4b)", () => {
+  it("lee el valor real y lo muestra con su etiqueta, ayuda y la nota «se aplica de inmediato»", async () => {
+    await ready(fakeRust(base({ dnd_auto_enabled: false })));
+    const sw = screen.getByLabelText(es.dnd.label);
+    expect(sw.getAttribute("role")).toBe("switch");
+    expect(isChecked(sw)).toBe(false);
+    const ids = (sw.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
+    expect(ids).toHaveLength(2);
+    const text = ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+    expect(text).toContain(es.dnd.hint);
+    expect(text).toContain(es.appliesNow);
+    expect(text).not.toContain(es.appliesOnRestart);
+  });
+
+  it("envía el booleano con set_setting y refleja el valor aplicado", async () => {
+    const { r } = await ready();
+    const sw = screen.getByLabelText(es.dnd.label);
+    expect(isChecked(sw)).toBe(true);
+    fireEvent.click(sw);
+    await waitFor(() => expect(isChecked(screen.getByLabelText(es.dnd.label))).toBe(false));
+    expect(r.calls).toEqual([["dnd_auto_enabled", false]]);
+    expect(r.real().dnd_auto_enabled).toBe(false);
+  });
+
+  it("si Rust lo rechaza, avisa con el nombre del ajuste y restaura el valor real", async () => {
+    const r = fakeRust();
+    (r.api.set as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      throw "rechazado";
+    });
+    await ready(r);
+    fireEvent.click(screen.getByLabelText(es.dnd.label));
+    await screen.findByText(`No se pudo cambiar «${es.dnd.label}»: el valor no es válido. Se restauró el valor actual.`);
+    expect(isChecked(screen.getByLabelText(es.dnd.label))).toBe(true);
+  });
+
+  it("sigue a Rust cuando el cambio llega por el evento", async () => {
+    const { r } = await ready();
+    r.pushFromRust({ dnd_auto_enabled: false });
+    await waitFor(() => expect(isChecked(screen.getByLabelText(es.dnd.label))).toBe(false));
+  });
+
+  it("está en una sección propia con su título y en inglés cambia el texto", async () => {
+    await ready(fakeRust(), "en");
+    const h = screen.getByRole("heading", { name: en.sections.dnd });
+    const section = h.closest("section")!;
+    present(within(section).getByLabelText(en.dnd.label));
+    present(within(section).getByText(en.appliesNow));
+    expect(en.dnd.label).not.toBe(es.dnd.label);
+  });
+
+  it("el texto dice qué hace, que no es el asistente de concentración y que se aplica de inmediato (es + en)", () => {
+    for (const s of [es, en]) {
+      expect(s.dnd.hint.length).toBeGreaterThan(80);
+      expect(s.appliesNow.length).toBeGreaterThan(5);
+    }
+    expect(es.dnd.hint).toMatch(/pantalla completa/i);
+    expect(es.dnd.hint).toMatch(/asistente de concentración de Windows/i);
+    expect(es.dnd.hint).toMatch(/Mostrar de todos modos/);
+    expect(es.appliesNow).toMatch(/inmediato/i);
+    expect(en.dnd.hint).toMatch(/full-screen/i);
+    expect(en.dnd.hint).toMatch(/focus assist/i);
+    expect(en.appliesNow).toMatch(/immediately/i);
+  });
+
+  it("la privacidad dice lo cierto: solo pregunta si hay pantalla completa, juego o presentación; no sabe cuál ni qué muestra", () => {
+    const joined = (s: typeof es) => s.privacy.items.join("\n");
+    expect(joined(es)).toMatch(/pantalla completa, un juego o una presentación/);
+    expect(joined(es)).toMatch(/no sabe cuál es la aplicación ni qué muestra/);
+    expect(joined(es)).toMatch(/no lo guarda/);
+    expect(joined(en)).toMatch(/full-screen application, a game or a presentation/);
+    expect(joined(en)).toMatch(/does not know which application it is or what it shows/);
+    expect(joined(en)).toMatch(/does not store it/);
+    // y lo que ya existía sigue diciéndose
+    expect(joined(es)).toMatch(/no hace capturas de pantalla/);
+    expect(joined(es)).toMatch(/no lee los títulos/);
+  });
+
+  it("el aviso de reinicio excluye explícitamente este ajuste, que actúa al momento", () => {
+    expect(es.restartBanner).toMatch(/salvo «No molestar automático»/);
+    expect(en.restartBanner).toMatch(/except “No molestar automático”/);
   });
 });

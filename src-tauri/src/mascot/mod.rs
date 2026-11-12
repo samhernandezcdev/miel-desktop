@@ -2,6 +2,7 @@
 //! los orquesta en un único hilo; `host` conecta con Tauri.
 
 pub mod clock;
+pub mod dnd;
 pub mod engine;
 pub mod geometry;
 pub mod host;

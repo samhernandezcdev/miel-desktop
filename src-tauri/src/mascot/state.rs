@@ -252,6 +252,21 @@ impl Fsm {
         running(self.hidden, self.paused, self.suppressed, self.dnd_override)
     }
 
+    /// La persona ocultó a Miel (`hidden` de v0.1.0).
+    pub fn is_hidden(&self) -> bool {
+        self.hidden
+    }
+
+    /// La persona pausó a Miel (`paused` de v0.1.0).
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Hay un episodio de supresión abierto (haya sido anulado o no).
+    pub fn is_suppression_episode(&self) -> bool {
+        self.suppressed
+    }
+
     pub fn is_sleeping(&self) -> bool {
         self.sleeping
     }

@@ -16,6 +16,7 @@ param(
   [int]$Reps = 5, [int]$Seconds = 238, [int]$WarmupSec = 12, [int]$Seed = 2026
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\common.ps1')   # Write-Utf8NoBom / Clear-PersonalPaths
 $settings = Join-Path $env:APPDATA 'lat.bkode.miel\settings.json'
 $bak = Join-Path $env:TEMP 'miel-settings-e0b-prod.bak'
 # Si no hay settings.json (Miel no instalado o sin datos), se siembra uno mínimo y al final se ELIMINA (y su carpeta si la creamos).
@@ -23,7 +24,7 @@ $existed = Test-Path $settings
 $hash0 = if ($existed) { (Get-FileHash $settings -Algorithm SHA256).Hash } else { 'AUSENTE' }
 $dirExisted = Test-Path (Split-Path $settings)
 if (Get-Process miel -ErrorAction SilentlyContinue) { throw 'Hay un miel.exe en ejecucion; cierralo (no se toca).' }
-if ($existed) { Copy-Item $settings $bak -Force } else { New-Item -ItemType Directory -Force (Split-Path $settings) | Out-Null; '{"schema_version":1,"messages_enabled":true,"follow_enabled":true,"reduced_motion":false,"paused":false,"pet_size":96}' | Set-Content $bak -Encoding UTF8 }
+if ($existed) { Copy-Item $settings $bak -Force } else { New-Item -ItemType Directory -Force (Split-Path $settings) | Out-Null; Write-Utf8NoBom $bak '{"schema_version":1,"messages_enabled":true,"follow_enabled":true,"reduced_motion":false,"paused":false,"pet_size":96}' }
 $logs = "$Out-logs"; New-Item -ItemType Directory -Force $logs | Out-Null
 $csv = "$Out-samples.csv"
 
@@ -37,7 +38,7 @@ function Get-Tree([int]$root) {
 try {
   $s = Get-Content $bak -Raw | ConvertFrom-Json
   $s.messages_enabled = $false; $s.follow_enabled = $false; $s.reduced_motion = $false; $s.paused = $false; $s.pet_size = 96
-  ($s | ConvertTo-Json) | Set-Content $settings -Encoding UTF8
+  Write-Utf8NoBom $settings ($s | ConvertTo-Json)
   $env:MIEL_FAST = '1'
   $env:MIEL_DIAG_SCRIPT = 'follow_off@1,pause@185,resume@205,hide@210,show@230'
   $run = 0
@@ -74,6 +75,7 @@ try {
   }
 }
 finally {
+  Clear-PersonalPathsInDir $logs   # saneado en el origen: ninguna ruta personal llega a los registros
   Get-Process miel -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Dir*" } | Stop-Process -Force -ErrorAction SilentlyContinue
   if ($existed) { Copy-Item $bak $settings -Force } else {
     Remove-Item $settings -Force -ErrorAction SilentlyContinue

@@ -1,0 +1,24 @@
+{
+  "nota": "SHA-256 por archivo de los SVG (saltos de línea normalizados a LF). Se actualiza SOLO al aprobar un cambio de arte: python -I tools/check_svg_hashes.py --update",
+  "sha256": {
+    "miel-bee-mascot/assets/bee/bee-curious.svg": "c7113612d62d69bc28b9b6e4a53f4b32f67b45e4d649b688256afe92ce7f6eed",
+    "miel-bee-mascot/assets/bee/bee-happy.svg": "27fd5a356e74ecba15c7cfec70197ad6977a1eebd3bbe4a8bb499c2a7db7bc7d",
+    "miel-bee-mascot/assets/bee/bee-idle.svg": "29f651c62ab2777c0a2e06ebdd38b60b2ed96d33bc68d7950d5b7233c7a0c8ff",
+    "miel-bee-mascot/assets/bee/bee-resting.svg": "67ff5caaa1dec6db34d3de411917e1c70a3953c5a6f3c410f7c352b99ad3a363",
+    "miel-bee-mascot/assets/bee/bee-rig.svg": "24f76c6fb03125f76bf0adaab44387ef86ca812161e9887542d751f3ff5f237c",
+    "miel-bee-mascot/assets/bee/bee-sleepy.svg": "d469ea43c4d48949e1a5e55265995381bc36f862c8babf17afb8377b11d40ab4",
+    "miel-bee-mascot/assets/bee/bee-surprised.svg": "3990802aecaf2562679d8c5d750b45fc2036e24d00c3645198922d1d94ad17ff",
+    "miel-bee-mascot/assets/bee/bee-talking.svg": "68f09253dd28e82ff25588f8a7df318abaa684174fb25ad5008d001b1a090e05",
+    "miel-bee-mascot/assets/bee/bee-thinking.svg": "ee49ede313d2b29ed424542c93e0d65c691ed5a9fd4f48acc347921ca4244cdf",
+    "src/assets/bee/bee-curious.svg": "c7113612d62d69bc28b9b6e4a53f4b32f67b45e4d649b688256afe92ce7f6eed",
+    "src/assets/bee/bee-happy.svg": "27fd5a356e74ecba15c7cfec70197ad6977a1eebd3bbe4a8bb499c2a7db7bc7d",
+    "src/assets/bee/bee-idle.svg": "29f651c62ab2777c0a2e06ebdd38b60b2ed96d33bc68d7950d5b7233c7a0c8ff",
+    "src/assets/bee/bee-resting.svg": "67ff5caaa1dec6db34d3de411917e1c70a3953c5a6f3c410f7c352b99ad3a363",
+    "src/assets/bee/bee-rig.nostyle.svg": "ccd9fbe532b9fd89c144a18fc66ee3663c4565a5188cd4313a512ae1057f6122",
+    "src/assets/bee/bee-rig.svg": "24f76c6fb03125f76bf0adaab44387ef86ca812161e9887542d751f3ff5f237c",
+    "src/assets/bee/bee-sleepy.svg": "d469ea43c4d48949e1a5e55265995381bc36f862c8babf17afb8377b11d40ab4",
+    "src/assets/bee/bee-surprised.svg": "3990802aecaf2562679d8c5d750b45fc2036e24d00c3645198922d1d94ad17ff",
+    "src/assets/bee/bee-talking.svg": "68f09253dd28e82ff25588f8a7df318abaa684174fb25ad5008d001b1a090e05",
+    "src/assets/bee/bee-thinking.svg": "ee49ede313d2b29ed424542c93e0d65c691ed5a9fd4f48acc347921ca4244cdf"
+  }
+}

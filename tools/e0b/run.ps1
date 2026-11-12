@@ -13,6 +13,7 @@ param(
   [switch]$Fps
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\common.ps1')   # Write-Utf8NoBom / Clear-PersonalPaths
 $settings = Join-Path $env:APPDATA 'lat.bkode.miel\settings.json'
 $bak = Join-Path $env:TEMP 'miel-settings-e0b.bak'
 $hash0 = (Get-FileHash $settings -Algorithm SHA256).Hash
@@ -83,7 +84,7 @@ try {
   # ajustes de PRUEBA (mensajes y seguimiento apagados, tamano por defecto); el original ya esta respaldado
   $s = Get-Content $bak -Raw | ConvertFrom-Json
   $s.messages_enabled = $false; $s.follow_enabled = $false; $s.reduced_motion = $false; $s.paused = $false; $s.pet_size = 96
-  ($s | ConvertTo-Json) | Set-Content $settings -Encoding UTF8
+  Write-Utf8NoBom $settings ($s | ConvertTo-Json)
 
   $srv = Start-Process python -ArgumentList @('-I', (Join-Path $Work 'server.py'), $Dist, (Join-Path $Work 'css'), $stateFile, $srvOut) -WindowStyle Hidden -PassThru
   Start-Sleep -Seconds 2

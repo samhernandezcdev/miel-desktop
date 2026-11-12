@@ -2,7 +2,7 @@
 
 **[Español](#español) · [English](#english)**
 
-> Este documento describe **qué consulta Miel y qué no**, y cómo se comprueba. Distingue lo que **ya hace v0.1.0** de lo **planificado para v0.2.0** (aún sin implementar). No es asesoría legal.
+> Este documento describe **qué consulta Miel y qué no**, y cómo se comprueba. Distingue lo que **ya hace v0.1.0** de lo **planificado para v0.2.0**; cada señal indica su **estado**: «Activo» si ya está implementada (hoy, No molestar automático) y «Planificado» si aún no. No es asesoría legal.
 
 ---
 
@@ -20,7 +20,7 @@
 | Posición del cursor | Seguirlo (v0.1.0) y reaccionar si se acerca (v0.2.0) | v0.1.0: solo con "Seguir cursor"; v0.2.0: proximidad **planificada** | Seguimiento / Proximidad |
 | Monitores, área de trabajo y DPI | Colocar la ventana y escalar el tamaño | v0.1.0 | — |
 | Tiempo desde la última entrada (`GetLastInputInfo` + `GetTickCount`) | Dormir tras un rato sin usar el equipo | **Planificado** (v0.2.0) | Sueño |
-| Estado de notificaciones del usuario (`SHQueryUserNotificationState`) | No molestar con pantalla completa, juego Direct3D o modo presentación | **Planificado** (v0.2.0) | No molestar automático |
+| Estado de notificaciones del usuario (`SHQueryUserNotificationState`) | No molestar con pantalla completa, juego Direct3D o modo presentación | **Activo** (v0.2.0, E4b): cada ~2,5 s, solo con el interruptor activado y sin que la persona haya ocultado o pausado a Miel | No molestar automático (se aplica al instante) |
 | Bloqueo/desbloqueo de sesión y suspensión/reanudación (mensajes de Windows) | Recalcular el estado al volver | **Planificado** (v0.2.0) | (con Sueño) |
 | Hora local del equipo (`GetLocalTime`, solo la hora) | Mensajes, saludo y ritmo de descanso según la franja del día | **Planificado** (v0.2.0, E6b) | Hora del día |
 
@@ -54,6 +54,11 @@ Miel **no**: lee lo que escribes (ni teclas ni pulsaciones), registra clics, hac
 - Es una **heurística de Windows**, no un detector de pantalla completa ni del asistente de concentración (*Focus Assist*). Puede dar **falsos positivos** (p. ej. vídeo a pantalla completa) y **falsos negativos** (juegos sin bordes, algunas apps).
 - Miel solo suprime con tres estados: pantalla completa/ocupado, juego Direct3D exclusivo y modo presentación. `QUNS_QUIET_TIME` y `QUNS_APP` **no** suprimen, y un error de la consulta nunca oculta a Miel.
 - Si la consulta falla repetidamente, Miel vuelve a mostrarse.
+- **Qué recibe Miel y qué no (E4b, activo):** un único número de estado. Miel **no sabe qué aplicación** está a pantalla completa, qué muestra ni en qué monitor; no mira la ventana en primer plano, ni procesos, ni títulos. El estado no se guarda ni se envía: solo decide, en el momento, si Miel se oculta o reaparece.
+- **Cuándo consulta:** cada ~2,5 s mientras el interruptor «No molestar automático» está activado y la persona no ha **ocultado ni pausado** a Miel (se consulta también mientras está oculta por No molestar, para saber cuándo termina). Si la oculta o la pausa a mano, o apaga el interruptor, el sondeo se detiene por completo (apagar el interruptor actúa al instante y termina cualquier supresión en curso).
+- **Dos lecturas seguidas** para empezar y para terminar (así un parpadeo no la oculta), y **tres errores seguidos** de la consulta terminan la supresión. Desde la bandeja, «Mostrar de todos modos» la anula durante la supresión en curso; no apaga el ajuste.
+- **No es el asistente de concentración ni «No molestar» de Windows**: Miel no sabe si esos modos están activos. Un vídeo a pantalla completa en el navegador (F11) puede ocultarla; un juego «sin bordes» puede no hacerlo.
+- Solo en compilaciones de diagnóstico (no en el instalador) una variable de entorno puede sustituir esta consulta por una secuencia programada para probar el comportamiento sin tocar el sistema.
 
 ## Red y telemetría
 - La compilación por defecto no incluye código de red ni telemetría.
@@ -88,7 +93,7 @@ La CI ejecuta el trabajo `privacy` (autotest y comprobación) en cada push y pul
 | Cursor position | Follow it (v0.1.0) and react when it gets close (v0.2.0) | v0.1.0: only with "Follow cursor"; v0.2.0: proximity **planned** | Follow / Proximity |
 | Monitors, work area and DPI | Place the window and scale its size | v0.1.0 | — |
 | Time since the last input (`GetLastInputInfo` + `GetTickCount`) | Fall asleep after a while without using the computer | **Planned** (v0.2.0) | Sleep |
-| User notification state (`SHQueryUserNotificationState`) | Do not disturb during full screen, exclusive Direct3D or presentation mode | **Planned** (v0.2.0) | Automatic Do Not Disturb |
+| User notification state (`SHQueryUserNotificationState`) | Do not disturb during full screen, exclusive Direct3D or presentation mode | **Active** (v0.2.0, E4b): every ~2.5 s, only while the switch is on and the person has not hidden or paused Miel | Automatic Do Not Disturb (applies immediately) |
 | Session lock/unlock and suspend/resume (Windows messages) | Recompute state on return | **Planned** (v0.2.0) | (with Sleep) |
 | Local computer time (`GetLocalTime`, hour only) | Messages, greeting and rest rhythm by time of day | **Planned** (v0.2.0, E6b) | Time of day |
 
@@ -122,6 +127,11 @@ Miel does **not**: read what you type (no keys, no keystrokes), record clicks, t
 - It is a **Windows heuristic**, not a full-screen detector nor a *Focus Assist* detector. It can give **false positives** (e.g. full-screen video) and **false negatives** (borderless games, some apps).
 - Miel only suppresses on three states: busy/full screen, exclusive Direct3D and presentation mode. `QUNS_QUIET_TIME` and `QUNS_APP` do **not** suppress, and a query error never hides Miel.
 - If the query keeps failing, Miel shows itself again.
+- **What Miel receives and what it does not (E4b, active):** a single status number. Miel **does not know which application** is full screen, what it shows or on which monitor; it does not look at the foreground window, processes or titles. The state is neither stored nor sent: it only decides, at that moment, whether Miel hides or comes back.
+- **When it asks:** every ~2.5 s while the "Automatic Do Not Disturb" switch is on and the person has not **hidden or paused** Miel (it also asks while hidden by Do Not Disturb, to know when it ends). If the person hides or pauses it by hand, or turns the switch off, polling stops completely (turning the switch off acts immediately and ends any suppression in progress).
+- **Two consecutive readings** to start and to end (so a blip does not hide it), and **three consecutive errors** from the query end the suppression. From the tray, "Mostrar de todos modos" (show anyway) overrides the current suppression; it does not turn the setting off.
+- **It is not Windows focus assist or Do Not Disturb**: Miel does not know whether those modes are on. Full-screen video in the browser (F11) may hide it; a "borderless" game may not.
+- Only in diagnostic builds (not in the installer) an environment variable can replace this query with a scripted sequence, to test the behaviour without touching the system.
 
 ## Network and telemetry
 - The default build contains no network code and no telemetry.
