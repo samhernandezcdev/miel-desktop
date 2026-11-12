@@ -11,7 +11,9 @@ export type EditableKey =
   | "pet_size"
   | "speed"
   | "reduced_motion"
-  | "dnd_auto_enabled";
+  | "dnd_auto_enabled"
+  | "sleep_enabled"
+  | "sleep_after_minutes";
 
 /** Preferencias tal como las devuelve Rust (snake_case). Solo se declaran las que esta ventana muestra. */
 export interface SettingsData {
@@ -21,6 +23,8 @@ export interface SettingsData {
   speed: number;
   reduced_motion: boolean;
   dnd_auto_enabled: boolean;
+  sleep_enabled: boolean;
+  sleep_after_minutes: number;
   [other: string]: unknown;
 }
 

@@ -1,8 +1,10 @@
 {
-  "_comment": "Listas PERMITIDAS exactas de la comprobación de privacidad (tools/check_privacy.py). Cambiarlas exige revisión de privacidad explícita (ver docs/PRIVACY.md). 'planned' = permitido por docs/plan/v0.2.0.md §10-11 pero aún no usado. EN USO desde E4b (No molestar automático): SHQueryUserNotificationState con QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN y QUNS_PRESENTATION_MODE (solo un entero de estado; ver windows_probe.rs y mascot/dnd.rs). Identificar QUÉ aplicación está a pantalla completa (GetForegroundWindow, EnumWindows, GetWindowThreadProcessId, QueryFullProcessImageName...) está PROHIBIDO en tools/check_privacy.py.",
+  "_comment": "Listas PERMITIDAS exactas de la comprobación de privacidad (tools/check_privacy.py). Cambiarlas exige revisión de privacidad explícita (ver docs/PRIVACY.md). 'planned' = permitido por docs/plan/v0.2.0.md §10-11 pero aún no usado. EN USO desde E4b (No molestar automático): SHQueryUserNotificationState con QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN y QUNS_PRESENTATION_MODE (solo un entero de estado; ver windows_probe.rs y mascot/dnd.rs). Identificar QUÉ aplicación está a pantalla completa (GetForegroundWindow, EnumWindows, GetWindowThreadProcessId, QueryFullProcessImageName...) está PROHIBIDO en tools/check_privacy.py. EN USO desde E5 (Sueño): GetLastInputInfo + GetTickCount (solo CUÁNTO tiempo lleva sin entrada la sesión: un número; nunca qué tecla ni qué ratón) y los avisos de bloqueo/desbloqueo de sesión y suspensión/reanudación (WTSRegisterSessionNotification con NOTIFY_FOR_THIS_SESSION, WM_WTSSESSION_CHANGE, WM_POWERBROADCAST). Ver windows_api_justification. Consultar usuarios o sesiones (WTSQuerySessionInformation*, WTSEnumerate*...) está PROHIBIDO en tools/check_privacy.py.",
   "capabilities": {
     "default.json": {
-      "windows": ["main"],
+      "windows": [
+        "main"
+      ],
       "permissions": [
         "core:event:allow-listen",
         "core:event:allow-unlisten",
@@ -12,7 +14,9 @@
       ]
     },
     "settings.json": {
-      "windows": ["settings"],
+      "windows": [
+        "settings"
+      ],
       "permissions": [
         "core:event:allow-listen",
         "core:event:allow-unlisten",
@@ -21,7 +25,13 @@
       ]
     }
   },
-  "app_permission_files": ["get_view", "get_display_prefs", "report_frontend_error", "get_settings", "set_setting"],
+  "app_permission_files": [
+    "get_view",
+    "get_display_prefs",
+    "report_frontend_error",
+    "get_settings",
+    "set_setting"
+  ],
   "windows_features": [
     "Win32_Foundation",
     "Win32_UI_Shell",
@@ -31,8 +41,13 @@
     "Win32_System_RemoteDesktop",
     "Win32_System_Power"
   ],
-  "tauri_features": ["tray-icon", "test"],
-  "csp_allowed_hosts": ["http://ipc.localhost"],
+  "tauri_features": [
+    "tray-icon",
+    "test"
+  ],
+  "csp_allowed_hosts": [
+    "http://ipc.localhost"
+  ],
   "windows_api": [
     "Win32::Foundation::HWND",
     "Win32::Foundation::LPARAM",
@@ -78,5 +93,20 @@
     "Win32::UI::WindowsAndMessaging::PBT_APMSUSPEND",
     "Win32::UI::WindowsAndMessaging::PBT_APMRESUMEAUTOMATIC",
     "Win32::UI::WindowsAndMessaging::PBT_APMRESUMESUSPEND"
-  ]
+  ],
+  "windows_api_justification": {
+    "Win32::System::RemoteDesktop::WTSRegisterSessionNotification": "Pide a Windows que avise a la ventana principal de los cambios de ESTA sesión (bloqueo/desbloqueo). No entrega datos de la persona ni de otras sesiones.",
+    "Win32::System::RemoteDesktop::WTSUnRegisterSessionNotification": "Anula ese registro al cerrar o al retirar la subclase.",
+    "Win32::System::RemoteDesktop::NOTIFY_FOR_THIS_SESSION": "Constante: limita los avisos a la sesión propia (nunca NOTIFY_FOR_ALL_SESSIONS).",
+    "Win32::UI::WindowsAndMessaging::WM_WTSSESSION_CHANGE": "Mensaje que trae un código de cambio de sesión; solo se distinguen bloqueo y desbloqueo.",
+    "Win32::UI::WindowsAndMessaging::WTS_SESSION_LOCK": "Código «la sesión se bloqueó»: Miel duerme de inmediato.",
+    "Win32::UI::WindowsAndMessaging::WTS_SESSION_UNLOCK": "Código «la sesión se desbloqueó»: Miel despierta.",
+    "Win32::UI::WindowsAndMessaging::WM_POWERBROADCAST": "Mensaje de energía que ya recibe toda ventana de nivel superior; no requiere registro.",
+    "Win32::UI::WindowsAndMessaging::PBT_APMSUSPEND": "Código «el equipo se suspende»: Miel duerme de inmediato.",
+    "Win32::UI::WindowsAndMessaging::PBT_APMRESUMEAUTOMATIC": "Código «el equipo se reanudó»: Miel despierta.",
+    "Win32::UI::WindowsAndMessaging::PBT_APMRESUMESUSPEND": "Código «el equipo se reanudó por acción de la persona»: Miel despierta.",
+    "Win32::UI::Input::KeyboardAndMouse::GetLastInputInfo": "Devuelve el instante (contador de 32 bits) de la última entrada de la sesión, sin decir qué fue ni de qué dispositivo. Base de la inactividad.",
+    "Win32::UI::Input::KeyboardAndMouse::LASTINPUTINFO": "Estructura de la llamada anterior (solo `dwTime`).",
+    "Win32::System::SystemInformation::GetTickCount": "Contador de ms del sistema para restar el instante anterior y obtener la inactividad."
+  }
 }

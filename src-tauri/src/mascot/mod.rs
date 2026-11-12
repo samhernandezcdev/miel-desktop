@@ -9,4 +9,5 @@ pub mod host;
 pub mod messages;
 pub mod motion;
 pub mod probe;
+pub mod sleep;
 pub mod state;

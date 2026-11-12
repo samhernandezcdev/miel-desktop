@@ -1,0 +1,165 @@
+[miel] diag: sonda SIMULADA (0 pasos de notificación, 4 de inactividad); no se consulta a Windows
+[miel] inicio: paused=false hidden=false follow=true pet_size=96 preferencias=Loaded { invalid: [], clamped: [] }
+[miel] t=1794453307899 relectura de monitores
+[miel] t=1794453307951 despertar idle
+[miel] t=1794453307962 diag: la sonda simulada informa inactividad Ok(62) (a los 0 s)
+[miel] get_view -> v0
+[miel] diag: FollowEnabled(false) a los 1 s
+[miel] t=1794453308965 despertar idle
+[miel] t=1794453308975 vista v1 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453327899 despertar idle
+[miel] Sueño: se duerme
+[miel] t=1794453327920 vista v2 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453327940 relectura de monitores
+[miel] t=1794453327976 despertar durmiendo
+[miel] t=1794453328023 despertar durmiendo
+[miel] t=1794453328069 despertar durmiendo
+[miel] t=1794453328115 despertar durmiendo
+[miel] t=1794453328161 despertar durmiendo
+[miel] t=1794453328207 despertar durmiendo
+[miel] t=1794453328255 despertar durmiendo
+[miel] t=1794453328302 despertar durmiendo
+[miel] t=1794453328350 despertar durmiendo
+[miel] t=1794453328398 despertar durmiendo
+[miel] t=1794453328444 despertar durmiendo
+[miel] t=1794453328490 despertar durmiendo
+[miel] t=1794453328538 despertar durmiendo
+[miel] t=1794453328584 despertar durmiendo
+[miel] t=1794453328629 despertar durmiendo
+[miel] t=1794453328675 despertar durmiendo
+[miel] t=1794453328722 despertar durmiendo
+[miel] t=1794453328769 despertar durmiendo
+[miel] t=1794453329904 despertar durmiendo
+[miel] t=1794453331913 despertar durmiendo
+[miel] t=1794453331922 vista v3 Rest/Resting paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453331924 relectura de monitores
+[miel] t=1794453333918 despertar durmiendo
+[miel] t=1794453335932 despertar durmiendo
+[miel] t=1794453335941 relectura de monitores
+[miel] t=1794453337936 despertar durmiendo
+[miel] t=1794453337946 relectura de monitores
+[miel] t=1794453339942 despertar durmiendo
+[miel] t=1794453339951 relectura de monitores
+[miel] t=1794453341947 despertar durmiendo
+[miel] t=1794453341957 relectura de monitores
+[miel] t=1794453343959 despertar durmiendo
+[miel] t=1794453343968 relectura de monitores
+[miel] t=1794453345962 despertar durmiendo
+[miel] t=1794453345971 relectura de monitores
+[miel] t=1794453347962 despertar durmiendo
+[miel] t=1794453349974 despertar durmiendo
+[miel] t=1794453349984 relectura de monitores
+[miel] t=1794453351989 despertar durmiendo
+[miel] t=1794453351998 relectura de monitores
+[miel] t=1794453354001 despertar durmiendo
+[miel] t=1794453354002 diag: la sonda simulada informa inactividad Ok(1101) (a los 46 s)
+[miel] Sueño: despierta
+[miel] t=1794453354003 vista v4 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453355507 despertar reaction
+[miel] t=1794453355517 vista v5 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453372907 despertar idle
+[miel] Sueño: se duerme
+[miel] t=1794453372917 vista v6 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453372918 relectura de monitores
+[miel] t=1794453374908 despertar durmiendo
+[miel] t=1794453374918 relectura de monitores
+[miel] t=1794453376915 despertar durmiendo
+[miel] t=1794453376925 vista v7 Rest/Resting paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453376927 relectura de monitores
+[miel] t=1794453378927 despertar durmiendo
+[miel] t=1794453378936 relectura de monitores
+[miel] t=1794453380942 despertar durmiendo
+[miel] t=1794453380951 relectura de monitores
+[miel] t=1794453382947 despertar durmiendo
+[miel] t=1794453382957 relectura de monitores
+[miel] t=1794453382952 diag: Set("sleep_enabled", Bool(false)) a los 75 s
+[miel] t=1794453382963 despertar durmiendo
+[miel] Sueño: despierta
+[miel] t=1794453382964 vista v8 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] diag: set sleep_enabled aplicado
+[miel] t=1794453384469 despertar reaction
+[miel] t=1794453384472 vista v9 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453387083 despertar idle
+[miel] t=1794453387093 vista v10 Reaction/Curious paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453392952 diag: Set("sleep_enabled", Bool(true)) a los 85 s
+[miel] diag: set sleep_enabled aplicado
+[miel] t=1794453392967 despertar reaction
+[miel] t=1794453393226 despertar reaction
+[miel] t=1794453393227 vista v11 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453393228 despertar idle
+[miel] t=1794453393229 vista v12 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453393231 relectura de monitores
+[miel] t=1794453397231 despertar rest
+[miel] t=1794453397240 vista v13 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453397242 relectura de monitores
+[miel] t=1794453402977 despertar rest
+[miel] Sueño: se duerme
+[miel] t=1794453402987 vista v14 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453402989 relectura de monitores
+[miel] t=1794453404978 despertar durmiendo
+[miel] t=1794453406985 despertar durmiendo
+[miel] t=1794453406995 vista v15 Rest/Resting paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453406996 relectura de monitores
+[miel] t=1794453408999 despertar durmiendo
+[miel] t=1794453409008 diag: la sonda simulada informa inactividad Ok(1106) (a los 101 s)
+[miel] Sueño: despierta
+[miel] t=1794453409009 vista v16 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453410502 despertar reaction
+[miel] t=1794453410511 vista v17 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453410513 relectura de monitores
+[miel] diag: Session(Locked) a los 105 s
+[miel] t=1794453412954 despertar rest
+[miel] Sueño: se duerme
+[miel] t=1794453412955 vista v18 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453412956 relectura de monitores
+[miel] t=1794453416954 despertar durmiendo
+[miel] t=1794453416964 vista v19 Rest/Resting paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453416967 relectura de monitores
+[miel] diag: Session(Unlocked) a los 125 s
+[miel] t=1794453432963 despertar durmiendo
+[miel] Sueño: despierta
+[miel] t=1794453432964 diag: la sonda simulada informa inactividad Ok(61) (a los 125 s)
+[miel] t=1794453432965 vista v20 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453434473 despertar reaction
+[miel] t=1794453434483 vista v21 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453434485 relectura de monitores
+[miel] t=1794453452969 despertar rest
+[miel] Sueño: se duerme
+[miel] t=1794453452978 vista v22 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453452980 relectura de monitores
+[miel] t=1794453454980 despertar durmiendo
+[miel] t=1794453454990 relectura de monitores
+[miel] t=1794453456980 despertar durmiendo
+[miel] t=1794453456989 vista v23 Rest/Resting paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453456991 relectura de monitores
+[miel] diag: Hidden(true) a los 150 s
+[miel] t=1794453457955 despertar durmiendo
+[miel] t=1794453457955 vista v24 Rest/Resting paused=false hidden=true suppressed=false sleeping=true follow=false msg=None
+[miel] diag: Hidden(false) a los 160 s
+[miel] t=1794453467955 despertar oculta
+[miel] Sueño: despierta
+[miel] t=1794453467956 relectura de monitores
+[miel] t=1794453467958 vista v26 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453469468 despertar reaction
+[miel] t=1794453469468 vista v27 Rest/Resting paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453482886 despertar rest
+[miel] t=1794453482895 vista v28 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453487969 despertar idle
+[miel] Sueño: se duerme
+[miel] t=1794453487979 vista v29 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453487980 relectura de monitores
+[miel] t=1794453489981 despertar durmiendo
+[miel] t=1794453489990 relectura de monitores
+[miel] t=1794453491983 despertar durmiendo
+[miel] t=1794453491992 vista v30 Rest/Resting paused=false hidden=false suppressed=false sleeping=true follow=false msg=None
+[miel] t=1794453491994 relectura de monitores
+[miel] t=1794453492955 diag: Set("sleep_after_minutes", Number(30)) a los 185 s
+[miel] t=1794453492961 despertar durmiendo
+[miel] Sueño: despierta
+[miel] t=1794453492962 vista v31 Reaction/Surprised paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] diag: set sleep_after_minutes aplicado
+[miel] t=1794453494472 despertar reaction
+[miel] t=1794453494473 vista v32 Idle/Idle paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453512532 despertar idle
+[miel] t=1794453512541 vista v33 Rest/Sleepy paused=false hidden=false suppressed=false sleeping=false follow=false msg=None
+[miel] t=1794453512543 relectura de monitores

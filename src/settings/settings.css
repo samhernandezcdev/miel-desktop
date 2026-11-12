@@ -194,7 +194,8 @@ p {
 }
 
 /* Puede encogerse: con texto muy grande o la ventana mínima no desborda en horizontal. */
-.number {
+.number,
+.select {
   flex: 0 1 7rem;
   width: 7rem;
   min-width: 3rem;
@@ -255,7 +256,8 @@ p {
   .notice,
   .sections section,
   .privacy,
-  .number {
+  .number,
+  .select {
     border: 1px solid CanvasText;
     background: Canvas;
     color: CanvasText;

@@ -2,7 +2,7 @@
 
 **[Español](#español) · [English](#english)**
 
-> Este documento describe **qué consulta Miel y qué no**, y cómo se comprueba. Distingue lo que **ya hace v0.1.0** de lo **planificado para v0.2.0**; cada señal indica su **estado**: «Activo» si ya está implementada (hoy, No molestar automático) y «Planificado» si aún no. No es asesoría legal.
+> Este documento describe **qué consulta Miel y qué no**, y cómo se comprueba. Distingue lo que **ya hace v0.1.0** de lo **planificado para v0.2.0**; cada señal indica su **estado**: «Activo» si ya está implementada (hoy, No molestar automático y Sueño) y «Planificado» si aún no. No es asesoría legal.
 
 ---
 
@@ -19,9 +19,9 @@
 |---|---|---|---|
 | Posición del cursor | Seguirlo (v0.1.0) y reaccionar si se acerca (v0.2.0) | v0.1.0: solo con "Seguir cursor"; v0.2.0: proximidad **planificada** | Seguimiento / Proximidad |
 | Monitores, área de trabajo y DPI | Colocar la ventana y escalar el tamaño | v0.1.0 | — |
-| Tiempo desde la última entrada (`GetLastInputInfo` + `GetTickCount`) | Dormir tras un rato sin usar el equipo | **Planificado** (v0.2.0) | Sueño |
+| Tiempo desde la última entrada (`GetLastInputInfo` + `GetTickCount`) | Dormir tras un rato sin usar el equipo | **Activo** (v0.2.0, E5): un número (cuánto tiempo), solo con «Sueño» activado y Miel visible y sin pausar; sin sondeo periódico mientras está despierta (calcula cuándo mirar) y cada ~2 s mientras duerme | Sueño (se aplica al instante) |
 | Estado de notificaciones del usuario (`SHQueryUserNotificationState`) | No molestar con pantalla completa, juego Direct3D o modo presentación | **Activo** (v0.2.0, E4b): cada ~2,5 s, solo con el interruptor activado y sin que la persona haya ocultado o pausado a Miel | No molestar automático (se aplica al instante) |
-| Bloqueo/desbloqueo de sesión y suspensión/reanudación (mensajes de Windows) | Recalcular el estado al volver | **Planificado** (v0.2.0) | (con Sueño) |
+| Bloqueo/desbloqueo de sesión y suspensión/reanudación (mensajes de Windows) | Dormir al instante al bloquear/suspender y despertar al volver | **Activo** (v0.2.0, E5): Windows avisa a la ventana de Miel; sin sondeo | (con Sueño) |
 | Hora local del equipo (`GetLocalTime`, solo la hora) | Mensajes, saludo y ritmo de descanso según la franja del día | **Planificado** (v0.2.0, E6b) | Hora del día |
 
 ### Lo que NO lee ni hace
@@ -44,6 +44,11 @@ Miel **no**: lee lo que escribes (ni teclas ni pulsaciones), registra clics, hac
 - Cuenta también entradas generadas por programas (p. ej. escritorio remoto, accesibilidad o herramientas de automatización): un programa que simule actividad mantiene despierta a Miel.
 - Se calcula con `GetTickCount`, un contador de 32 bits que **da la vuelta cada ≈ 49,7 días**; Miel resta con aritmética `wrapping` y trata lecturas anómalas con prudencia (no despierta ni duerme por una lectura imposible).
 - Puede comportarse distinto con sesiones remotas, con el equipo bloqueado o en un cambio de usuario.
+- **Qué recibe Miel y qué no (E5, activo):** un único número (milisegundos desde la última entrada de la sesión). **No sabe qué teclas** se pulsaron, ni qué ratón ni qué ventana, ni qué haces; no mira la ventana en primer plano. El número no se guarda ni se envía: solo decide si Miel se duerme o despierta.
+- **El límite de las entradas simuladas:** la inactividad de Windows también cuenta como uso lo que otros programas **simulen** (escritorio remoto, accesibilidad, automatización, algunos juegos o reproductores). Un programa así mantiene despierta a Miel aunque no estés ahí; Miel no puede distinguirlo.
+- **Cuándo consulta:** solo con «Sueño» activado y con Miel visible y sin pausar (ni oculta a mano, ni suprimida por No molestar). Despierta **no hay sondeo periódico**: Miel calcula cuándo tocaría dormirse (tiempo elegido − inactividad actual, con un mínimo de 1 s) y vuelve a mirar entonces; si hubo actividad, recalcula. Dormida consulta cada ~2 s solo para detectar actividad. Si la lectura falla, **nunca se duerme** por ello: reintenta con espera creciente (5 s, 10 s… hasta 1 min), y dormida, tres errores seguidos la despiertan.
+- **Bloqueo y suspensión (sin leer nada):** Windows avisa a la ventana de Miel de que **esta** sesión se bloqueó o desbloqueó y de que el equipo se suspende o se reanuda (`WTSRegisterSessionNotification` con `NOTIFY_FOR_THIS_SESSION`, `WM_WTSSESSION_CHANGE`, `WM_POWERBROADCAST`). Solo se distinguen esos cuatro avisos; no se consulta quién es el usuario ni otras sesiones. Al bloquear o suspender Miel duerme al instante; al desbloquear o reanudar despierta con una pequeña sorpresa. Tras reanudar o desbloquear se trata como actividad reciente aunque el contador aún no lo refleje.
+- **Despertar desde la bandeja:** mostrar, reanudar, «Mostrar de todos modos» o activar «Seguir cursor» desde la bandeja la despiertan al instante (ocultada o pausada no se consulta nada). Apagar el interruptor «Sueño» la despierta y detiene todo el sondeo.
 
 **`GetLocalTime`** (hora del día, E6b)
 - Miel lee **solo la hora** (0–23) del reloj local del equipo, para elegir entre cuatro franjas (madrugada 00:00–05:59, mañana 06:00–11:59, tarde 12:00–18:59, noche 19:00–23:59). No usa fecha, zona horaria ni ubicación, no lo guarda ni lo envía.
@@ -92,9 +97,9 @@ La CI ejecuta el trabajo `privacy` (autotest y comprobación) en cada push y pul
 |---|---|---|---|
 | Cursor position | Follow it (v0.1.0) and react when it gets close (v0.2.0) | v0.1.0: only with "Follow cursor"; v0.2.0: proximity **planned** | Follow / Proximity |
 | Monitors, work area and DPI | Place the window and scale its size | v0.1.0 | — |
-| Time since the last input (`GetLastInputInfo` + `GetTickCount`) | Fall asleep after a while without using the computer | **Planned** (v0.2.0) | Sleep |
+| Time since the last input (`GetLastInputInfo` + `GetTickCount`) | Fall asleep after a while without using the computer | **Active** (v0.2.0, E5): one number (how long), only with "Sleep" on and Miel visible and not paused; no periodic polling while awake (it computes when to look) and every ~2 s while asleep | Sleep (applies immediately) |
 | User notification state (`SHQueryUserNotificationState`) | Do not disturb during full screen, exclusive Direct3D or presentation mode | **Active** (v0.2.0, E4b): every ~2.5 s, only while the switch is on and the person has not hidden or paused Miel | Automatic Do Not Disturb (applies immediately) |
-| Session lock/unlock and suspend/resume (Windows messages) | Recompute state on return | **Planned** (v0.2.0) | (with Sleep) |
+| Session lock/unlock and suspend/resume (Windows messages) | Fall asleep at once on lock/suspend and wake on return | **Active** (v0.2.0, E5): Windows notifies Miel's window; no polling | (with Sleep) |
 | Local computer time (`GetLocalTime`, hour only) | Messages, greeting and rest rhythm by time of day | **Planned** (v0.2.0, E6b) | Time of day |
 
 ### What it does NOT read or do
@@ -117,6 +122,11 @@ Miel does **not**: read what you type (no keys, no keystrokes), record clicks, t
 - It also counts input generated by programs (e.g. remote desktop, accessibility or automation tools): a program that simulates activity keeps Miel awake.
 - It is computed with `GetTickCount`, a 32-bit counter that **wraps every ≈ 49.7 days**; Miel subtracts with wrapping arithmetic and handles anomalous readings defensively (an impossible reading neither wakes nor sleeps Miel).
 - It may behave differently with remote sessions, a locked machine or a user switch.
+- **What Miel receives and what it does not (E5, active):** a single number (milliseconds since the session's last input). It **does not know which keys** were pressed, nor which mouse or window, nor what you are doing; it does not look at the foreground window. The number is neither stored nor sent: it only decides whether Miel falls asleep or wakes up.
+- **The synthetic-input limit:** Windows' idle time also counts as use whatever other programs **simulate** (remote desktop, accessibility, automation, some games or players). Such a program keeps Miel awake even if you are not there; Miel cannot tell the difference.
+- **When it asks:** only with "Sleep" on and Miel visible and not paused (not hidden by hand, not suppressed by Do Not Disturb). While awake there is **no periodic polling**: Miel computes when it would be time to fall asleep (chosen time − current idle time, with a 1 s minimum) and looks again then; if there was activity, it recomputes. While asleep it asks every ~2 s only to detect activity. If the reading fails it **never falls asleep** because of it: it retries with growing waits (5 s, 10 s… up to 1 min), and while asleep three consecutive errors wake it.
+- **Lock and suspend (reading nothing):** Windows notifies Miel's window that **this** session was locked or unlocked and that the computer suspends or resumes (`WTSRegisterSessionNotification` with `NOTIFY_FOR_THIS_SESSION`, `WM_WTSSESSION_CHANGE`, `WM_POWERBROADCAST`). Only those four notices are distinguished; it does not ask who the user is nor about other sessions. On lock or suspend Miel falls asleep at once; on unlock or resume it wakes with a small surprise. After resume or unlock it is treated as recent activity even if the counter does not show it yet.
+- **Waking from the tray:** show, resume, "Mostrar de todos modos" or turning "Follow cursor" on from the tray wake it at once (while hidden or paused nothing is queried). Turning the "Sleep" switch off wakes it and stops all polling.
 
 **`GetLocalTime`** (time of day, E6b)
 - Miel reads **only the hour** (0–23) of the computer's local clock, to pick one of four bands (early morning 00:00–05:59, morning 06:00–11:59, afternoon 12:00–18:59, evening 19:00–23:59). It uses no date, time zone or location, and neither stores nor sends it.

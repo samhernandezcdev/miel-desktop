@@ -54,6 +54,7 @@ RUST_FORBIDDEN = [
     ("GetWindowText*", r"\bGetWindowText\w*"),
     ("InternalGetWindowText", r"\bInternalGetWindowText\b"),
     ("Identificar la ventana o app en primer plano (E4b)", r"\bGetForegroundWindow\b|\bGetWindowThreadProcessId\b|\bQueryFullProcessImageName\w*|\bGetModuleFileNameEx\w*|\bEnumWindows\b|\bFindWindow\w*"),
+    ("Consultar usuarios o sesiones de Windows (E5)", r"\bWTSQuerySessionInformation\w*|\bWTSEnumerate\w*|\bWTSOpenServer\w*|\bWTSQueryUserToken\b|\bGetUserName\w*|\bLsaEnumerate\w*"),
     ("UI Automation", r"\b(?:C|I)?UIAutomation\w*|\bWin32_UI_Accessibility\b|::Accessibility::"),
     ("Desktop Duplication", r"\bDuplicateOutput\d*\b|\bIDXGIOutputDuplication\w*|\bDXGI_OUTDUPL\w*"),
     ("Graphics Capture", r"\bGraphicsCapture\w*|\bIGraphicsCaptureItemInterop\b|Graphics::Capture|Graphics_Capture"),
@@ -65,6 +66,21 @@ JS_FORBIDDEN = [
     ("EventSource", r"\bEventSource\b"),
     ("sendBeacon", r"\bsendBeacon\b"),
     ("getDisplayMedia", r"\bgetDisplayMedia\b"),
+]
+
+# Símbolos de `windows` que añade E5 (sueño, sesión y energía). Cada uno DEBE tener su justificación en
+# tools/privacy_policy.json ("windows_api_justification"); el autotest lo exige.
+E5_SYMBOLS = [
+    "Win32::System::RemoteDesktop::WTSRegisterSessionNotification",
+    "Win32::System::RemoteDesktop::WTSUnRegisterSessionNotification",
+    "Win32::System::RemoteDesktop::NOTIFY_FOR_THIS_SESSION",
+    "Win32::UI::WindowsAndMessaging::WM_WTSSESSION_CHANGE",
+    "Win32::UI::WindowsAndMessaging::WTS_SESSION_LOCK",
+    "Win32::UI::WindowsAndMessaging::WTS_SESSION_UNLOCK",
+    "Win32::UI::WindowsAndMessaging::WM_POWERBROADCAST",
+    "Win32::UI::WindowsAndMessaging::PBT_APMSUSPEND",
+    "Win32::UI::WindowsAndMessaging::PBT_APMRESUMEAUTOMATIC",
+    "Win32::UI::WindowsAndMessaging::PBT_APMRESUMESUSPEND",
 ]
 
 # Nombres de crates que indican capacidad de red o complementos nuevos (cargo tree).
@@ -442,6 +458,7 @@ def self_test() -> int:
             "GetKeyboardState": "GetKeyboardState", "BitBlt": "BitBlt", "PrintWindow": "PrintWindow",
             "GetWindowText*": "GetWindowTextW", "InternalGetWindowText": "InternalGetWindowText",
             "Identificar la ventana o app en primer plano (E4b)": "GetForegroundWindow",
+            "Consultar usuarios o sesiones de Windows (E5)": "WTSQuerySessionInformationW",
             "UI Automation": "IUIAutomation", "Desktop Duplication": "DuplicateOutput1",
             "Graphics Capture": "GraphicsCaptureSession",
         }
@@ -527,6 +544,30 @@ def self_test() -> int:
         expect("API windows no aprobada y prohibida", check_windows_api(t, policy, None, verify_exists=False), True)
         rs.write_text(original_rs + "\nuse windows::Win32::System::Ole::{OleInitialize, OleUninitialize};\n", encoding="utf-8")
         expect("API windows no aprobada (grupo)", check_windows_api(t, policy, None, verify_exists=False), True)
+        # E5 (sesión y energía): lo de sesión/energía que NO está aprobado debe fallar aunque no esté en la lista prohibida
+        for label, line in (
+            ("registro de cambios de configuración de energía", "use windows::Win32::System::Power::RegisterPowerSettingNotification;"),
+            ("estado de la batería", "use windows::Win32::System::Power::GetSystemPowerStatus;"),
+            ("consulta de la sesión activa", "use windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;"),
+            ("registro de avisos de TODAS las sesiones", "use windows::Win32::System::RemoteDesktop::NOTIFY_FOR_ALL_SESSIONS;"),
+            ("avisos de sesión no aprobados (conexión remota)", "use windows::Win32::UI::WindowsAndMessaging::WTS_REMOTE_CONNECT;"),
+            ("monitor de entrada: hilo de entrada", "use windows::Win32::UI::WindowsAndMessaging::GetMessageExtraInfo;"),
+        ):
+            rs.write_text(original_rs + f"\n{line}\n", encoding="utf-8")
+            expect(f"E5: API de sesión/energía no aprobada: {label}", check_windows_api(t, policy, None, verify_exists=False), True)
+        # E5: todo símbolo nuevo debe estar listado explícitamente en la política; si se quita uno, lo que lo usa falla
+        rs.write_text(original_rs, encoding="utf-8")
+        for sym in policy.get("windows_api_justification", {}):
+            reduced = json.loads(json.dumps(policy))
+            reduced["windows_api"] = [x for x in reduced["windows_api"] if x != sym]
+            in_use = sym in {f"{p}" for p in used_windows_api(t)}
+            expect(f"E5: símbolo {sym} {'usado' if in_use else 'sin uso'} y quitado de la política", check_windows_api(t, reduced, None, verify_exists=False), in_use)
+        for sym in policy.get("windows_api_justification", {}):
+            if sym not in policy["windows_api"]:
+                failures.append(f"E5: {sym} tiene justificación pero no está en la lista permitida")
+        for sym in E5_SYMBOLS:
+            if not policy.get("windows_api_justification", {}).get(sym):
+                failures.append(f"E5: falta la justificación del símbolo nuevo {sym}")
         rs.write_text(original_rs, encoding="utf-8")
         fake = json.loads(json.dumps(policy))
         fake["windows_api"].append("Win32::UI::Shell::SimboloQueNoExiste")

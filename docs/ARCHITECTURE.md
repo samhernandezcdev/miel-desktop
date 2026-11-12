@@ -28,13 +28,15 @@ Miel es una aplicación **Tauri 2** (Rust + WebView2) con un frontend **React + 
 | `mascot/motion.rs`, `geometry.rs` | Cinemática con dt real (velocidad/aceleración limitadas) y geometría en píxeles físicos (monitores, DPI, coordenadas negativas, ancla descentrada). |
 | `mascot/engine.rs` | **Un único hilo** + `Condvar`. Une FSM, Talker y movimiento; sin polling en Idle/Rest/Paused/Hidden. El bucle solo espera y llama a `Worker::tick(now, cmds)`; el plazo de la espera es `next_deadline(&Worker, now)` (mínimo absoluto de FSM, hablante, movimiento y *debounce*; `None` si está oculta/en pausa/suprimida), ambos probables con `FakeClock` sin hilos. |
 | `mascot/dnd.rs` | **Detector de No molestar** (E4b): máquina de estados pura (lista blanca `BUSY`/`D3D_FULL_SCREEN`/`PRESENTATION_MODE`, histéresis 2/2, 3 errores seguidos terminan el episodio). Sin hilos: lo alimenta el motor dentro de `next_deadline`/`tick`. |
+| `mascot/sleep.rs` | **Sueño por inactividad** (E5): decisión pura (sin hilos ni Windows): `idle_check` = umbral − inactividad (mínimo 1 s), `wake_poll` cada 2 s durmiendo con margen de histéresis, errores nunca duermen (retroceso 5 s → 1 min; dormida, 3 errores despiertan), suelo de «actividad sintética» (desbloqueo, reanudación, acción de la persona). Lo alimenta el motor dentro de `next_deadline`/`tick`; sin sondeo fijo despierta. |
+| `session_watch.rs` | Segunda subclase Win32 (E5, misma técnica que `display_watch`): `WM_WTSSESSION_CHANGE` (bloqueo/desbloqueo, `WTSRegisterSessionNotification` con `NOTIFY_FOR_THIS_SESSION`) y `WM_POWERBROADCAST` (suspensión/reanudación) → `Cmd::Session`. Sin ventana, hilo ni sondeo nuevos. |
 | `mascot/host.rs` | Implementación de `Host` sobre Tauri (cursor, monitores, ventana, eventos). El motor se prueba con un `Host` falso. |
 | `tray.rs` | Icono único y menú (incluye «Ajustes…», E3); `MenuSync` aplica solo lo que cambió; `dispatch` traduce acciones en órdenes. |
 | `settings_window.rs` | Ventana de ajustes (E3): etiqueta `settings`, creada desde Rust, de instancia única, **destruida** al cerrarla; ventana normal (marco, enfocable, sin «siempre encima»). |
 | `lifecycle.rs` | Primer `show` (bandeja lista + página cargada), cierre en dos fases, `fatal`. |
 | `display_watch.rs` | Subclase Win32 (`WM_DISPLAYCHANGE`, `WM_DPICHANGED`, área de trabajo) → `Cmd::GeometryChanged`. |
 | `errlog.rs` | Registro local, acotado y saneado de errores del frontend. |
-| `diag.rs` | Solo diagnóstico (`debug` o `--features diag`): guiones `MIEL_DIAG_SCRIPT` (órdenes del motor) y `MIEL_DIAG_UI_SCRIPT` (abrir/cerrar ajustes, `set:clave=valor`) para medir sin automatizar la UI. |
+| `diag.rs` | Solo diagnóstico (`debug` o `--features diag`; sus cadenas no llegan al instalador): `MIEL_DIAG_SCRIPT` (órdenes del motor, incl. supresión y, E5, `lock`/`unlock`/`suspend`/`power_resume`), `MIEL_DIAG_UI_SCRIPT` (abrir/cerrar ajustes, `set:clave=valor`), `MIEL_DIAG_NOTIF` (E4b: sonda de notificaciones programada), `MIEL_DIAG_IDLE` y `MIEL_DIAG_SLEEP_SECS` (E5: inactividad programada y umbral en segundos), `MIEL_SEED` (semilla del RNG) y `MIEL_FAST`; con `diag` el motor además registra una línea por despertar del planificador. No generan ni mueven entradas reales. |
 
 ### La FSM y los mensajes
 

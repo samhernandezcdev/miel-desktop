@@ -541,3 +541,77 @@ Preparación: ajustes → «No molestar automático» activado; Miel visible y s
 
 ### Comandos de verificación (desde la raíz del repositorio)
 `cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings` · `npm test` · `npx tsc --noEmit` · `npm run check:dist` · `python -I tools/check_privacy.py` y `--self-test` · `npm run licenses:check` · `python -I tools/check_svg_hashes.py` y `--self-test` · `python -I tools/check_personal.py` y `--self-test` (esta, antes de cada commit).
+
+## v0.2.0 · E5: Sueño por inactividad, sesión y energía (2026-11-12)
+
+### Qué hace E5
+- **Inactividad** (`GetLastInputInfo` + `GetTickCount` vía `SystemProbe`; aritmética de E1a: `wrapping_sub` en u32, delta > 2^31 = 0, tope de 30 días, fallo = `Err`). Sin sondeo fijo despierta: la próxima comprobación es `umbral − inactividad` (mínimo 1 s) y entra en `next_deadline` con su puerta (`sleep_enabled && visible && !pausada && !suprimida && sesión no ausente`). Durmiendo: sondeo ligero cada **2 s** (plan §4.4: 1–2 s; extremo alto) y despierta si `inactividad + 2 s < umbral`. Un error NUNCA duerme: reintenta con retroceso 5 s → 10 s → … tope 60 s; dormida, 3 errores seguidos la despiertan.
+- **Comportamiento:** presentación `sleepy` → `resting` estable (la FSM ya lo tenía de E1b), sin salir por plazos de Rest, sin mensajes, sin RNG; plazos congelados que se retoman al despertar. **Despertar:** `Reaction` de `Surprised` de 1,5 s (D6; no consume `reaction_cooldown`, sin RNG, sin mensaje: el hablante además guarda un respiro de 10 s) y luego vuelve a lo congelado con su tiempo restante. **Decisión sobre el rincón (el plan no lo fija):** mientras duerme el comportamiento efectivo es Rest, así que Miel termina de llegar a su rincón de descanso y se queda quieta; al despertar no vuelve. `reduced_motion` lo resuelve el frontend sobre la misma expresión (sin cambios de SVG ni CSS de la mascota).
+- **Acción explícita desde la bandeja** (mostrar, reanudar/pausar→reanudar, «Mostrar de todos modos», activar «Seguir») termina el sueño al instante (oculta/pausada no se muestrea) y cuenta como actividad reciente (`activity_at` es un suelo de la inactividad leída, también tras desbloqueo/reanudación). Al terminar un episodio de No molestar se reconsulta la inactividad **antes** de mostrar (reaparece dormida si toca).
+- **Sesión y energía:** bloqueo y suspensión ⇒ duerme al instante, sin sondear; desbloqueo y reanudación ⇒ despierta con la sorpresa (con «bloqueada y suspendida», reanudar no despierta hasta desbloquear). Opción más pequeña: **segunda subclase** de la ventana principal (`session_watch.rs`, misma técnica que `display_watch`): `WM_POWERBROADCAST` y `WM_WTSSESSION_CHANGE` (registrada con `WTSRegisterSessionNotification(NOTIFY_FOR_THIS_SESSION)`). Sin ventana, hilo ni sondeo nuevos.
+- **En vivo:** `Cmd::SleepEnabled`, `Cmd::SleepAfter(ms)` desde `set_setting` (`sleep_enabled`, `sleep_after_minutes` 5/10/15/30/60): apagar despierta y detiene el sondeo; cambiar el tiempo recalcula el plazo (con una lectura inmediata). UI: sección «Sueño» con interruptor y selector (es + en, «se aplica de inmediato»); Privacidad con la frase cierta y el límite de las entradas simuladas.
+
+### Símbolos de Windows nuevos (todos con justificación en `tools/privacy_policy.json`, `windows_api_justification`)
+`WTSRegisterSessionNotification`, `WTSUnRegisterSessionNotification`, `NOTIFY_FOR_THIS_SESSION` (`Win32::System::RemoteDesktop`; feature nueva `Win32_System_RemoteDesktop` en `Cargo.toml`); `WM_WTSSESSION_CHANGE`, `WTS_SESSION_LOCK`, `WTS_SESSION_UNLOCK`, `WM_POWERBROADCAST`, `PBT_APMSUSPEND`, `PBT_APMRESUMEAUTOMATIC`, `PBT_APMRESUMESUSPEND` (`Win32::UI::WindowsAndMessaging`). `GetLastInputInfo`, `LASTINPUTINFO` y `GetTickCount` ya estaban en uso desde E1a. Sin `SetWindowsHookEx`, raw input, `GetAsyncKeyState` ni nada que vea teclas o contenido. `check_privacy.py` prohíbe además `WTSQuerySessionInformation*`/`WTSEnumerate*`/`WTSOpenServer`/`WTSQueryUserToken`/`GetUserName*` y su `--self-test` cubre los símbolos nuevos: APIs de sesión/energía no aprobadas fallan, quitar de la política cualquier símbolo usado hace fallar, y exige justificación de cada símbolo E5.
+
+### Resultados automáticos
+| Comprobación | Resultado |
+|---|---|
+| `cargo test` | 321 + 5 + 7 (antes 276 + 5 + 7); 2 `ignored` (microbenchmarks). 45 pruebas nuevas en total (módulos `sleep`, motor, FSM, `session_watch`, `diag` y `lib`); las del motor con FakeClock + FakeProbe: umbral exacto y −1 ms, desbordamiento u32 y delta > 2^31 vía `idle_ms_from_ticks`, errores durante 2 h, despertar por actividad, umbral en vivo en ambos sentidos, interruptor apagado/encendido, oculta/pausada/suprimida sin sondeo, reanudar/mostrar/Seguir desde la bandeja, bloqueo/desbloqueo, suspensión/reanudación, bloqueada+suspendida, fin de supresión con/sin umbral, juego a pantalla completa que cruza el umbral, rachas de actividad, oscilaciones en el margen, sueño de 10 min y 2 h sin ráfaga, sin RNG); `session_watch` prueba la subclase con una ventana de solo mensajes |
+| clippy `-D warnings`, `tsc`, `check:dist`, `licenses:check` | OK |
+| vitest | 136 (antes 126) |
+| `check_privacy.py` + `--self-test`, `check_svg_hashes.py` + `--self-test`, `check_personal.py` + `--self-test` | OK |
+| Diff de SVG; diff de CSS | SVG vacío; CSS solo `src/settings/settings.css` (`.select`), ninguno de la mascota |
+| Binario de producción sin `diag` | `MIEL_SEED`, `MIEL_DIAG_NOTIF/IDLE/SLEEP_SECS/SCRIPT`, `MIEL_FAKE_HOUR` y «despertar » aparecen 0 veces |
+| Microbenchmark `GetLastInputInfo` + `GetTickCount` (prueba ignorada) | ≈ 0,003 µs (≈ 3 ns) por lectura: lee memoria compartida, sin llamada al kernel; coste despreciable a cualquier cadencia |
+
+### Aserciones existentes modificadas
+- Rust: `lib.rs::only_the_dnd_switch_acts_on_the_running_engine` — su bucle «ningún otro ajuste es en vivo» excluye ahora también `sleep_enabled` y `sleep_after_minutes` (constante `LIVE_KEYS`; son en vivo por diseño; se añadió una prueba propia). Ninguna otra prueba de Rust modificada; `Cmd::Suppressed` pasó a usar `set_episode` (misma conducta).
+- vitest: `SettingsApp.test.tsx` — «NO muestra seguimiento…»: interruptores 3→4, un `combobox`, y se quitaron «Dormir», «Sueño» y «sleep» de la lista de palabras ausentes (ahora existen); controles 8→10; `h2` 5→6; `fakeRust` acepta `sleep_enabled` como booleano. `strings.test.ts` — **la prueba de privacidad:** en E4b se quitaron «no molestar» y «do not disturb» (y «No molestar» en `SettingsApp.test`); en E5 se quitan «dormir» y «sleep». Se sustituyen por afirmaciones precisas: patrones de afirmaciones FALSAS (saber/leer/guardar teclas, aplicaciones, ventanas o títulos; historial; enviar datos; leer el asistente de concentración) que exigen no ir precedidos de negación, comprobadas contra los textos de privacidad y de las funciones, con control negativo (frases falsas es/en se detectan, frases verdaderas no) y una comprobación de que el texto de Sueño dice lo cierto y el límite de las entradas simuladas.
+- Flakiness preexistente observada una vez: `suppression_hides_and_restores_the_window_through_the_engine` (E1b) compara `view()` justo tras ver la ventana visible, antes de que el tick publique la vista; con la máquina cargada falló una vez y pasó 6/6 al repetirla. No se tocó.
+
+### Verificación con la app REAL (`tools/e5/verify_sleep.ps1` + `analyze_sleep.py`; datos `docs/measurements/v020-e5-verify*`)
+Binario de producción `diag`; inactividad inyectada con `MIEL_DIAG_IDLE=0@0,0@45,0@100,0@125` (crece con el tiempo), umbral `MIEL_DIAG_SLEEP_SECS=20`, `MIEL_DIAG_SCRIPT=follow_off@1,lock@105,unlock@125,hide@150,show@160`, `MIEL_DIAG_UI_SCRIPT=set:sleep_enabled=false@75,set:sleep_enabled=true@85,set:sleep_after_minutes=30@185`, No molestar apagado (su sondeo de 2,5 s ensuciaba el recuento). No se genera ni mueve ninguna entrada real. **30/30:** duerme a los 20 s con la ventana visible; sondeo ligero ~1 por 2 s; actividad a los 45 s despierta con `Surprised` y vuelve a dormir 20 s después; apagar «Sueño» dormida despierta al instante y encenderlo no la duerme de golpe; bloqueo a los 105 s duerme al instante con solo ~5 s de inactividad y sin sondear; desbloqueo despierta con sorpresa y no vuelve a dormirse hasta un umbral después; oculta dormida (sin ningún despertar por sondeo) y mostrar termina el sueño al instante; subir el tiempo a 30 min dormida despierta; ningún mensaje durmiendo ni en la sorpresa. Una primera ejecución falló 6 comprobaciones por defectos del analizador (ventanas de tiempo y el sondeo de No molestar de 2,5 s), no del motor. No verificado en la app real: suspensión/reanudación y bloqueo **reales** de Windows (solo inyectados) → matriz manual.
+
+### Medición (`tools/e5/e5run.ps1`; `miel.exe` SOLO; producción + `diag`, `MIEL_FAST=1`, `follow_off@1`, 9 variantes × 4 repeticiones × 150 s intercaladas; inactividad programada; datos `docs/measurements/v020-e5-*`)
+Cifra principal: **despertares del planificador por minuto** (contador bajo `diag`: una línea por despertar del hilo con el estado), mediana de 4 repeticiones [rango]; CPU solo como comprobación gruesa.
+
+| Estado | `sleep_enabled` = true | `sleep_enabled` = false |
+|---|---|---|
+| Idle (`MIEL_FAST`) | 24,8 [21,3–29,0] | 26,2 [23,9–27,2] |
+| Rest (`MIEL_FAST`) | 15,1 [14,5–15,6] | 15,1 [14,2–16,0] |
+| Reaction (`MIEL_FAST`) | 12,0 [11,7–12,0] | 11,7 [10,5–12,0] |
+| Durmiendo | **30,3** [29,8–30,8] (CPU medio 0,07 %) | — |
+| Suprimida | 0,00 | 0,00 |
+| Oculta por la persona | 0,00 | 0,00 |
+| Pausada por la persona | 0,00 | 0,00 |
+
+Lectura: con `MIEL_FAST` (plazos de 3–9 s) el reposo despierta ~15–26 veces/min **igual con Sueño activado que apagado** (las diferencias están dentro del rango entre repeticiones): despierta, el sueño no añade despertares (solo mira una vez por umbral, no en estos 150 s). Durmiendo despierta 30/min, que es exactamente el sondeo de 2 s (0,5 Hz), y **no hay ningún otro despertar** (sin movimiento ni plazos); oculta, pausada y suprimida despiertan **0** veces con el interruptor encendido, igual que apagado: el sondeo no corre. El CPU durmiendo (0,07 %) está en el límite de resolución del contador de Windows (~0,1 %) y no se interpreta más. Límites: `MIEL_FAST` acelera la FSM (en uso real Idle/Rest despiertan mucho menos); 165 Hz; solo el proceso raíz; la inactividad es la programada (la lectura real cuesta ≈ 3 ns); No molestar apagado en todas las variantes (medido en E4b).
+
+### Desviaciones y decisiones a revisar
+1. Intervalo de sondeo durmiendo: 2 s (extremo alto del plan 1–2 s); margen de histéresis 2 s; reintentos 5 s→60 s.
+2. Rincón: mientras duerme sigue yendo a su rincón de descanso (comportamiento efectivo Rest) y queda quieta.
+3. Reanudar/mostrar desde la bandeja **despierta** (explícito, según el encargo) en lugar de recalcular el sueño como decía el caso 2 de §5.2 del plan; la acción cuenta como actividad reciente. Activar «Seguir» también despierta (plan §4.2 c).
+4. Tras la sorpresa el hablante guarda un respiro de 10 s (no estaba en el plan) para cumplir «sin mensaje» al despertar; pasado ese respiro se aplica la regla normal.
+5. `PBT_APMRESUMEAUTOMATIC` y `PBT_APMRESUMESUSPEND` valen ambos «reanudado»; la reanudación sin desbloqueo despierta (si la sesión además estaba bloqueada, no hasta desbloquear).
+6. Modificadas aserciones de vitest además de la de privacidad (consecuencia del control nuevo) y una de Rust (`LIVE_KEYS`); ver arriba.
+7. No hay elemento de bandeja nuevo.
+8. Suspensión/reanudación y bloqueo reales de Windows: solo inyectados en la app real; el hecho de si `GetTickCount` incluye el tiempo suspendido (hipótesis del plan §6.2) no se verificó y se mitiga con el suelo de «actividad reciente».
+
+### Matriz de pruebas MANUALES de E5 (pendiente de ejecutar por la persona; rellenar «Resultado»)
+Preparación: ajustes → «Sueño» activado y, para no esperar, «Dormirse tras» = 5 minutos; Miel visible, sin ocultar ni pausar. Márgenes: el sondeo durmiendo es de 2 s.
+| # | Caso | Esperado | Resultado |
+|---|---|---|---|
+| 1 | Dejar el equipo inactivo hasta pasar el tiempo elegido (sin tocar ratón ni teclado) | Tras ~5 min Miel pasa a `sleepy` y luego a `resting`, va a su rincón y se queda quieta; sigue visible; no habla | |
+| 2 | Despertar moviendo el ratón | En ≤ ~2 s hace una breve sorpresa (`surprised`, ~1,5 s) sin mensaje y vuelve a su comportamiento normal | |
+| 3 | Despertar con una tecla | Igual que el caso 2 | |
+| 4 | Win+L (bloquear) y desbloquear | Al bloquear duerme al instante (sin esperar los 5 min); al desbloquear despierta con la sorpresa y no vuelve a dormirse hasta pasado un tiempo entero sin usar el equipo | |
+| 5 | Suspender el equipo y reanudarlo | Duerme al suspender; al reanudar (si no hay pantalla de bloqueo) despierta con la sorpresa; si hay bloqueo, despierta al desbloquear. No hay ráfaga de comportamientos acumulados | |
+| 6 | Con Miel ya dormida, cambiar el tiempo en ajustes (p. ej. a 30 min) | Usar el ratón la despierta; con el tiempo nuevo no vuelve a dormir hasta que pase el nuevo tiempo sin usar el equipo | |
+| 7 | Con Miel dormida, «Ocultar» desde la bandeja y luego «Mostrar» | Oculta: no hay ningún sondeo. Al mostrar despierta al instante (sorpresa) y no se duerme otra vez hasta pasado un tiempo entero | |
+| 8 | Juego a pantalla completa mientras pasa el umbral | Con el juego (No molestar activo) Miel está oculta y no duerme ni sondea; al terminar el juego reaparece **dormida** si la inactividad ya superó el tiempo, o despierta si no | |
+| 9 | Apagar el interruptor «Sueño» con ella dormida | Despierta al instante (sorpresa) y no vuelve a dormirse mientras esté apagado; encenderlo con el equipo ya inactivo la duerme al momento | |
+| 10 | Límite de entradas simuladas: un programa que simule ratón/teclado (escritorio remoto, algún reproductor, automatización) | Windows lo cuenta como uso: Miel **no** se duerme aunque no estés (documentado en PRIVACY, no es un fallo) | |
+
+### Comandos de verificación (desde la raíz del repositorio)
+Los de E4b más `python -I tools/e5/analyze_sleep.py <salida de verify_sleep.ps1>` y `python -I tools/e5/analyze_e5.py <salida de e5run.ps1>`.

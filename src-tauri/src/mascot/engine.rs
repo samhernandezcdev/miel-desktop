@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use super::clock::{Clock, SystemClock};
 use super::dnd::{self, Change, Detector};
+use super::sleep;
 use super::geometry::{
     anchor_of, clamp_anchor, ensure_center_visible, follow_target, fully_visible, nearest_area,
     rest_spot, window_origin, Frame, Rect, Vec2,
@@ -27,6 +28,7 @@ use super::geometry::{
 use super::messages::{Talker, TalkerConfig};
 use super::motion::{Motion, MotionParams};
 use super::probe::SystemProbe;
+use super::sleep::{Action, SleepTask};
 use super::state::{Behavior, Fsm, Ms, Timings, View};
 
 #[derive(Debug, Clone, Copy)]
@@ -79,6 +81,21 @@ pub enum Cmd {
     /// El interruptor «No molestar automático» cambió (E4b): se aplica al instante. `false` termina cualquier
     /// episodio y detiene el sondeo; `true` lo reanuda (con una lectura inmediata si Miel no está oculta ni pausada).
     DndAuto(bool),
+    /// El interruptor «Sueño» cambió (E5): se aplica al instante. `false` despierta y detiene el sondeo.
+    SleepEnabled(bool),
+    /// Nuevo umbral de inactividad en ms (E5): recalcula el plazo al instante.
+    SleepAfter(Ms),
+    /// Bloqueo/desbloqueo de la sesión y suspensión/reanudación del equipo (E5).
+    Session(SessionEvent),
+}
+
+/// Avisos de sesión y energía de Windows (`WTS_SESSION_LOCK/UNLOCK`, `PBT_APMSUSPEND/RESUME*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionEvent {
+    Locked,
+    Unlocked,
+    Suspended,
+    Resumed,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,6 +126,9 @@ pub struct EngineConfig {
     pub dnd_auto: bool,
     /// Intervalo del sondeo de No molestar (ms del reloj del motor).
     pub dnd_poll_ms: Ms,
+    /// «Sueño» activado al arrancar (`sleep_enabled`) y umbral de inactividad (ms). Sin sonda no hace nada.
+    pub sleep_enabled: bool,
+    pub sleep_after_ms: Ms,
     pub seed: Option<u64>,
 }
 
@@ -130,6 +150,8 @@ impl Default for EngineConfig {
             initial_paused: false,
             dnd_auto: false,
             dnd_poll_ms: dnd::POLL_MS,
+            sleep_enabled: false,
+            sleep_after_ms: sleep::DEFAULT_AFTER_MS,
             seed: None,
         }
     }
@@ -323,6 +345,8 @@ fn next_deadline<H: Host>(w: &Worker<H>, now: Ms) -> Option<Ms> {
     // Sondeo de No molestar: tiene su propia puerta (también corre MIENTRAS está suprimida, para saber cuándo termina;
     // nunca con la ventana oculta o pausada por la persona).
     let by_dnd = if w.dnd_gate() { w.dnd.next_poll } else { None };
+    // Sueño (E5): `idle_check` despierta / `wake_poll` durmiendo; su puerta exige estar corriendo.
+    let by_sleep = if w.sleep_gate() { w.sleep.next } else { None };
     if w.fsm.is_suspended() {
         // pausado/oculto/suprimido: solo un aviso de geometría o el sondeo de recuperación pueden despertarlo
         return [w.geom_due, by_dnd].into_iter().flatten().min();
@@ -335,7 +359,7 @@ fn next_deadline<H: Host>(w: &Worker<H>, now: Ms) -> Option<Ms> {
     } else {
         None
     };
-    [by_state, by_motion, w.geom_due, by_dnd].into_iter().flatten().min()
+    [by_state, by_motion, w.geom_due, by_dnd, by_sleep].into_iter().flatten().min()
 }
 
 struct Worker<H: Host> {
@@ -367,6 +391,8 @@ struct Worker<H: Host> {
     probe: Option<Arc<dyn SystemProbe>>,
     /// Tarea `dnd_poll` del planificador.
     dnd: DndTask,
+    /// Tareas `idle_check` / `wake_poll` del planificador (E5).
+    sleep: SleepTask,
 }
 
 /// Estado de la tarea de sondeo de No molestar. Solo hay un plazo (`next_poll`) y entra en `next_deadline`.
@@ -391,6 +417,7 @@ impl<H: Host> Worker<H> {
         let last_emitted = compose(&fsm, &talker);
         let last_tick = clock.now_ms();
         let dnd_auto = cfg.dnd_auto;
+        let sleep = SleepTask::new(cfg.sleep_enabled, cfg.sleep_after_ms);
         Self {
             host,
             cfg,
@@ -415,6 +442,7 @@ impl<H: Host> Worker<H> {
             shared: None,
             probe: None,
             dnd: DndTask { enabled: dnd_auto, det: Detector::new(), next_poll: None },
+            sleep,
         }
     }
 
@@ -464,7 +492,9 @@ impl<H: Host> Worker<H> {
 
     /// Abre o cierra el episodio de supresión en la FSM y alinea ventana y mensajes.
     fn set_episode(&mut self, now: Ms, suppressed: bool) -> bool {
-        let changed = self.fsm.set_suppressed(now, suppressed);
+        // Al terminar el episodio se reconsulta la inactividad ANTES de mostrar (plan §4.4): reaparece dormida si toca.
+        let slept = !suppressed && self.fsm.is_suppression_episode() && self.sleep_reevaluate(now);
+        let changed = self.fsm.set_suppressed(now, suppressed) | slept;
         self.sync_visibility();
         self.sync_talker(now) | changed
     }
@@ -498,11 +528,118 @@ impl<H: Host> Worker<H> {
         }
     }
 
+    // ---- Sueño (E5): tareas `idle_check` y `wake_poll` del planificador único -------------------------------------
+
+    /// Puerta de estado (plan §4.4): hay sonda, el interruptor está activo, Miel corre (visible y sin pausa) y la
+    /// sesión no está bloqueada ni suspendida (entonces duerme sin sondear). Nunca corre oculta, pausada ni suprimida.
+    fn sleep_gate(&self) -> bool {
+        self.probe.is_some() && self.sleep.enabled && self.fsm.is_running() && !self.sleep.away.any()
+    }
+
+    /// Alinea `next` con la puerta: al abrirse se consulta de inmediato; al cerrarse el sondeo se detiene por completo.
+    fn sleep_sync_gate(&mut self, now: Ms) {
+        match (self.sleep_gate(), self.sleep.next) {
+            (true, None) => {
+                self.sleep.errors = 0;
+                self.sleep.next = Some(now);
+            }
+            (false, Some(_)) => self.sleep.next = None,
+            _ => {}
+        }
+    }
+
+    /// Entra en el sueño (sin sorpresa). Devuelve `true` si cambió algo observable.
+    fn fall_asleep(&mut self, now: Ms) -> bool {
+        if crate::DIAG && !self.fsm.is_sleeping() {
+            eprintln!("[miel] Sueño: se duerme");
+        }
+        let changed = self.fsm.set_sleeping(now, true);
+        self.sync_talker(now) | changed
+    }
+
+    /// Despierta con la sorpresa breve (solo se ve si está corriendo). `activity`: la causa cuenta como actividad
+    /// reciente (acción de la persona, desbloqueo, reanudación) aunque el contador de Windows aún no la refleje.
+    fn wake_up(&mut self, now: Ms, activity: bool) -> bool {
+        if activity {
+            self.sleep.activity_at = Some(now);
+        }
+        if crate::DIAG && self.fsm.is_sleeping() {
+            eprintln!("[miel] Sueño: despierta");
+        }
+        let was_asleep = self.fsm.is_sleeping();
+        let changed = self.fsm.wake(now);
+        if was_asleep {
+            // «sin mensaje» al despertar: ni durante la sorpresa ni justo al terminar (el fin de la reacción es un
+            // cambio de comportamiento y, con el cooldown ya vencido, soltaría una frase). Un respiro breve.
+            self.talker.hold_off(now, sleep::WAKE_QUIET_MS);
+        }
+        self.sync_talker(now) | changed
+    }
+
+    /// Acción explícita de la persona (bandeja, ajustes): termina el sueño sin esperar al sondeo (oculta o pausada no
+    /// se muestrea). Con la sesión bloqueada o suspendida no hace nada (no hay persona).
+    fn explicit_wake(&mut self, now: Ms) -> bool {
+        if self.sleep.away.any() || !self.fsm.is_sleeping() {
+            return false;
+        }
+        self.wake_up(now, true)
+    }
+
+    /// Lee la sonda y aplica el veredicto. Devuelve `true` si cambió algo observable.
+    fn sleep_apply_reading(&mut self, now: Ms) -> bool {
+        let Some(probe) = self.probe.clone() else { return false };
+        let asleep = self.fsm.is_sleeping();
+        match self.sleep.on_reading(now, asleep, probe.idle_ms()) {
+            Action::None => false,
+            Action::Sleep => self.fall_asleep(now),
+            Action::Wake => self.wake_up(now, false),
+        }
+    }
+
+    /// Reconsulta inmediata (fin de un episodio de supresión, antes de mostrar). Sin sonda, interruptor apagado o
+    /// sesión ausente no cambia nada.
+    fn sleep_reevaluate(&mut self, now: Ms) -> bool {
+        if self.probe.is_none() || !self.sleep.enabled || self.sleep.away.any() {
+            return false;
+        }
+        self.sleep_apply_reading(now)
+    }
+
+    /// Si la comprobación vence (y la puerta está abierta), lee la sonda.
+    fn sleep_poll(&mut self, now: Ms) -> bool {
+        let Some(due) = self.sleep.next else { return false };
+        if now < due || !self.sleep_gate() {
+            return false;
+        }
+        self.sleep_apply_reading(now)
+    }
+
+    fn on_session(&mut self, ev: SessionEvent, now: Ms) -> bool {
+        match ev {
+            SessionEvent::Locked => self.sleep.away.locked = true,
+            SessionEvent::Suspended => self.sleep.away.suspended = true,
+            SessionEvent::Unlocked => self.sleep.away.locked = false,
+            SessionEvent::Resumed => self.sleep.away.suspended = false,
+        }
+        if !self.sleep.enabled {
+            return false;
+        }
+        if self.sleep.away.any() {
+            // bloqueo o suspensión: duerme de inmediato, sin esperar el umbral ni sondear
+            self.sleep.next = None;
+            self.fall_asleep(now)
+        } else {
+            // desbloqueo/reanudación (y nada más lo mantiene ausente): despierta con la sorpresa y cuenta como actividad
+            self.wake_up(now, true)
+        }
+    }
+
     fn run(mut self, shared: &Shared) {
         let _stop = StopGuard(shared);
         self.refresh(true);
         let now0 = self.now();
         self.dnd_sync_gate(now0);
+        self.sleep_sync_gate(now0);
         loop {
             let timeout = self.wait_timeout();
             let cmds = {
@@ -522,7 +659,33 @@ impl<H: Host> Worker<H> {
                 std::mem::take(&mut g.cmds)
             };
             let now = self.now();
+            if crate::DIAG {
+                // Contador de despertares del planificador (E5, solo diagnóstico): una línea por despertar con el
+                // estado en que estaba; las cifras por minuto se calculan fuera (tools/e5/analyze_e5.py).
+                let unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+                eprintln!("[miel] t={unix_ms} despertar {}", self.wake_label());
+            }
             self.tick(now, cmds);
+        }
+    }
+
+    /// Estado del motor para el contador de despertares (diagnóstico).
+    fn wake_label(&self) -> &'static str {
+        if self.fsm.is_hidden() {
+            "oculta"
+        } else if self.fsm.is_paused() {
+            "pausada"
+        } else if !self.fsm.is_visible() {
+            "suprimida"
+        } else if self.fsm.is_sleeping() {
+            "durmiendo"
+        } else {
+            match self.fsm.behavior() {
+                Behavior::Idle => "idle",
+                Behavior::Follow => "follow",
+                Behavior::Rest => "rest",
+                Behavior::Reaction => "reaction",
+            }
         }
     }
 
@@ -534,8 +697,14 @@ impl<H: Host> Worker<H> {
             changed |= self.apply(c, now);
         }
         self.dnd_sync_gate(now);
+        self.sleep_sync_gate(now);
         changed |= self.fsm.step(now, &mut self.rng);
         changed |= self.dnd_poll(now);
+        self.sleep_sync_gate(now); // el sondeo de No molestar pudo cerrar o abrir la puerta (episodio)
+        changed |= self.sleep_poll(now);
+        // la reacción de despertar o el paso sleepy→resting pueden vencer en este mismo instante
+        changed |= self.fsm.step(now, &mut self.rng);
+        changed |= self.sync_talker(now);
         changed |= self.talker.step(now);
         changed |= self.talker.observe(now, &self.fsm.view(), &mut self.rng);
         if changed {
@@ -566,21 +735,26 @@ impl<H: Host> Worker<H> {
     fn apply(&mut self, cmd: Cmd, now: Ms) -> bool {
         match cmd {
             Cmd::Pause(p) => {
-                let changed = self.fsm.set_paused(now, p);
+                let mut changed = self.fsm.set_paused(now, p);
+                if !p {
+                    changed |= self.explicit_wake(now); // reanudar desde la bandeja: el sueño termina ya
+                }
                 self.sync_talker(now) | changed
             }
             Cmd::Hidden(h) => {
-                let changed = self.fsm.set_hidden(now, h);
+                let mut changed = self.fsm.set_hidden(now, h);
+                if !h {
+                    changed |= self.explicit_wake(now); // mostrar desde la bandeja
+                }
                 self.sync_visibility(); // al mostrar: relee monitores y reubica si hace falta
                 self.sync_talker(now) | changed
             }
-            Cmd::Suppressed(s) => {
-                let changed = self.fsm.set_suppressed(now, s);
-                self.sync_visibility();
-                self.sync_talker(now) | changed
-            }
+            Cmd::Suppressed(s) => self.set_episode(now, s),
             Cmd::DndOverride => {
-                let changed = self.fsm.set_dnd_override(now);
+                let mut changed = self.fsm.set_dnd_override(now);
+                if changed {
+                    changed |= self.explicit_wake(now); // «Mostrar de todos modos»
+                }
                 self.sync_visibility();
                 self.sync_talker(now) | changed
             }
@@ -595,12 +769,49 @@ impl<H: Host> Worker<H> {
                     self.set_episode(now, false)
                 }
             }
-            Cmd::FollowEnabled(e) => self.fsm.set_follow_enabled(now, &mut self.rng, e),
+            Cmd::SleepEnabled(on) => {
+                self.sleep.enabled = on;
+                self.sleep.errors = 0;
+                if on {
+                    // activar con la sesión ausente (no ocurre desde la interfaz): duerme; si no, `sleep_sync_gate` lee ya
+                    if self.sleep.away.any() {
+                        return self.fall_asleep(now);
+                    }
+                    false
+                } else {
+                    self.sleep.next = None; // apagar detiene el sondeo y despierta
+                    let was_away = self.sleep.away.any();
+                    let c = if self.fsm.is_sleeping() { self.wake_up(now, !was_away) } else { false };
+                    c | self.sync_talker(now)
+                }
+            }
+            Cmd::SleepAfter(ms) => {
+                self.sleep.after = ms.max(1);
+                self.sleep.next = None; // `sleep_sync_gate` lo reabre con una lectura inmediata (recalcula el plazo)
+                false
+            }
+            Cmd::Session(ev) => self.on_session(ev, now),
+            Cmd::FollowEnabled(e) => {
+                let mut changed = self.fsm.set_follow_enabled(now, &mut self.rng, e);
+                if e {
+                    changed |= self.explicit_wake(now); // activar «Seguir» despierta (plan §4.2 c)
+                }
+                changed
+            }
             Cmd::TogglePause => {
-                let changed = self.fsm.toggle_paused(now);
+                let mut changed = self.fsm.toggle_paused(now);
+                if !self.fsm.is_paused() {
+                    changed |= self.explicit_wake(now);
+                }
                 self.sync_talker(now) | changed
             }
-            Cmd::ToggleFollow => self.fsm.toggle_follow(now, &mut self.rng),
+            Cmd::ToggleFollow => {
+                let mut changed = self.fsm.toggle_follow(now, &mut self.rng);
+                if self.fsm.view().follow_enabled {
+                    changed |= self.explicit_wake(now);
+                }
+                changed
+            }
             Cmd::NativeGeometryEvents => {
                 self.native_events = true;
                 false
@@ -2279,5 +2490,527 @@ mod tests {
         at(&mut w, &clock, t + 1_000);
         assert!(w.fsm.view().message.is_none() && w.talker.message().is_none(), "el cooldown del hablante no disparó de golpe");
         assert_eq!(w.fsm.behavior(), b0);
+    }
+
+    // ---- E5: sueño por inactividad, sesión y energía (FakeProbe + FakeClock, sin hilos ni esperas reales) ----
+
+    use super::super::probe::idle_ms_from_ticks;
+    use super::super::sleep as sl;
+    use super::super::state::WAKE_SURPRISE_MS;
+
+    const MIN: Ms = 60_000;
+
+    /// Plazos de la FSM larguísimos (no interfieren) y hablante con el cooldown ya vencido (si pudiera hablar, hablaría).
+    fn sleep_cfg(after: Ms) -> EngineConfig {
+        EngineConfig {
+            timings: Timings { idle: (7_200_000, 7_200_000), ..Timings::default() },
+            talker: TalkerConfig { cooldown: 1_000, initial_delay: (1_000, 1_000), ..TalkerConfig::default() },
+            sleep_enabled: true,
+            sleep_after_ms: after,
+            seed: Some(1),
+            ..EngineConfig::default()
+        }
+    }
+
+    fn sleep_worker(cfg: EngineConfig) -> DndWorker {
+        let (mut w, clock, host) = worker(cfg);
+        let probe = Arc::new(FakeProbe::new());
+        w.probe = Some(probe.clone());
+        (w, clock, host, probe)
+    }
+
+    /// Un usuario que no toca nada desde `last_input`: la sonda informa `t − last_input` y se da un paso en `t`.
+    fn idle_step(w: &mut Worker<Fake>, clock: &FakeClock, probe: &FakeProbe, last_input: Ms, t: Ms) {
+        probe.set_idle(Ok(t.saturating_sub(last_input)));
+        at(w, clock, t);
+    }
+
+    /// Avanza de `from` a `to` de a `step` ms con la inactividad medida desde `last_input`.
+    fn run_idle(w: &mut Worker<Fake>, clock: &FakeClock, probe: &FakeProbe, last_input: Ms, from: Ms, to: Ms, step: Ms) {
+        let mut t = from;
+        while t < to {
+            t = (t + step).min(to);
+            idle_step(w, clock, probe, last_input, t);
+        }
+    }
+
+    fn visible_views(host: &Fake) -> Vec<View> {
+        host.views.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn nothing_is_polled_without_a_probe_or_with_the_switch_off() {
+        let (mut w, clock, _h) = worker(sleep_cfg(10 * MIN));
+        at(&mut w, &clock, 0);
+        assert!(w.sleep.next.is_none(), "sin sonda: ninguna tarea de sueño");
+        assert_eq!(next_deadline(&w, 0), w.fsm.next_wakeup(), "y ningún plazo propio");
+        let (mut w, clock, _h, probe) = sleep_worker(EngineConfig { sleep_enabled: false, ..sleep_cfg(10 * MIN) });
+        probe.set_idle(Ok(99 * MIN));
+        for k in 0..10 {
+            at(&mut w, &clock, k * MIN);
+        }
+        assert_eq!(probe.idle_calls(), 0, "interruptor apagado: ninguna consulta");
+        assert!(!w.fsm.view().sleeping);
+    }
+
+    #[test]
+    fn the_first_check_is_immediate_and_the_next_one_lands_exactly_on_the_threshold() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        assert_eq!(probe.idle_calls(), 1);
+        assert_eq!(w.sleep.next, Some(10 * MIN), "umbral − inactividad = 10 min − 0");
+        assert_eq!(next_deadline(&w, 0), Some(10 * MIN), "entra en el planificador único, sin sondeo fijo");
+        // durante 9 min 59 s no se consulta nada más: ni un despertar del hilo
+        assert_eq!(probe.idle_calls(), 1);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN - 1);
+        assert_eq!(probe.idle_calls(), 1, "un instante antes del umbral nadie despierta");
+        assert!(!w.fsm.view().sleeping);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        assert_eq!(probe.idle_calls(), 2);
+        assert!(w.fsm.view().sleeping, "inactividad == umbral: duerme");
+    }
+
+    #[test]
+    fn one_millisecond_below_the_threshold_does_not_sleep_and_it_rechecks_soon() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        probe.set_idle(Ok(10 * MIN - 1));
+        at(&mut w, &clock, 10 * MIN);
+        assert!(!w.fsm.view().sleeping);
+        assert_eq!(w.sleep.next, Some(10 * MIN + sl::MIN_CHECK_MS), "mínimo razonable, no un bucle ocupado");
+    }
+
+    #[test]
+    fn sleeping_shows_a_stable_rest_that_never_leaves_by_rest_deadlines() {
+        let (mut w, clock, host, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        let v = w.fsm.view();
+        assert_eq!((v.behavior, v.expression, v.sleeping), (Behavior::Rest, Expression::Sleepy, true));
+        run_idle(&mut w, &clock, &probe, 0, 10 * MIN, 10 * MIN + 5_000, 1_000);
+        let v = w.fsm.view();
+        assert_eq!((v.behavior, v.expression), (Behavior::Rest, Expression::Resting), "sleepy y luego resting");
+        // una hora más: nada cambia (ni plazos de Rest ni reacciones ni mensajes)
+        let n = visible_views(&host).len();
+        run_idle(&mut w, &clock, &probe, 0, 10 * MIN + 5_000, 70 * MIN, 2_000);
+        assert_eq!(visible_views(&host).len(), n, "durante el sueño no se emite ninguna vista nueva");
+        assert!(visible_views(&host).iter().all(|v| v.message.is_none()), "ni un mensaje");
+        assert!(host.visible.load(Ordering::SeqCst), "sueño no es suspensión: la ventana sigue visible");
+    }
+
+    #[test]
+    fn the_wake_poll_is_light_and_has_the_planned_interval() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        let before = probe.idle_calls();
+        run_idle(&mut w, &clock, &probe, 0, 10 * MIN, 10 * MIN + 60_000, 500);
+        let calls = probe.idle_calls() - before;
+        assert_eq!(calls as u64, 60_000 / sl::WAKE_POLL_MS, "una consulta cada {} ms durmiendo", sl::WAKE_POLL_MS);
+    }
+
+    #[test]
+    fn activity_wakes_it_with_a_short_surprise_without_a_message_and_then_returns() {
+        let (mut w, clock, host, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        run_idle(&mut w, &clock, &probe, 0, 10 * MIN, 30 * MIN, 2_000);
+        assert!(w.fsm.view().sleeping);
+        let rem = w.fsm.next_wakeup(); // solo el paso sleepy→resting (ya pasó): ninguno
+        assert_eq!(rem, None);
+        // la persona mueve el ratón en t = 30 min: la siguiente consulta (≤ 2 s) lo ve
+        let t_act = 30 * MIN;
+        probe.set_idle(Ok(500));
+        at(&mut w, &clock, t_act + sl::WAKE_POLL_MS);
+        let v = w.fsm.view();
+        assert!(!v.sleeping);
+        assert_eq!((v.behavior, v.expression), (Behavior::Reaction, Expression::Surprised), "sorpresa");
+        assert!(v.message.is_none() && w.talker.message().is_none(), "sin mensaje");
+        assert!(!w.fsm.messages_allowed(), "ni durante la sorpresa");
+        // dura poco y vuelve a Idle
+        probe.set_idle(Ok(2_000));
+        at(&mut w, &clock, t_act + sl::WAKE_POLL_MS + WAKE_SURPRISE_MS - 1);
+        assert_eq!(w.fsm.view().expression, Expression::Surprised);
+        probe.set_idle(Ok(2_100));
+        at(&mut w, &clock, t_act + sl::WAKE_POLL_MS + WAKE_SURPRISE_MS);
+        let v = w.fsm.view();
+        assert_eq!((v.behavior, v.expression, v.sleeping), (Behavior::Idle, Expression::Idle, false));
+        assert!(visible_views(&host).iter().filter(|v| v.message.is_some()).count() == 0);
+    }
+
+    #[test]
+    fn after_a_long_sleep_there_is_no_burst_of_accumulated_behaviors() {
+        for total in [10 * MIN, 120 * MIN] {
+            // plazos por defecto (Idle 20–45 s): durante el sueño vencerían decenas de veces
+            let cfg = EngineConfig { timings: Timings::default(), ..sleep_cfg(30_000) };
+            let (mut w, clock, host, probe) = sleep_worker(cfg);
+            idle_step(&mut w, &clock, &probe, 0, 0);
+            // el usuario deja el equipo en t = 0; a los 30 s duerme (si Miel estaba en pleno Follow/Rest, da igual)
+            run_idle(&mut w, &clock, &probe, 0, 0, 30_000, 1_000);
+            assert!(w.fsm.view().sleeping, "duerme a los 30 s (total {total})");
+            let slept_at = 30_000;
+            let n0 = visible_views(&host).len();
+            run_idle(&mut w, &clock, &probe, 0, slept_at, slept_at + total, 2_000);
+            // solo pudo cambiar sleepy→resting (una vista como mucho); ningún comportamiento nuevo
+            let extra: Vec<_> = visible_views(&host)[n0..].to_vec();
+            assert!(extra.len() <= 1, "total {total}: vistas durante el sueño = {}", extra.len());
+            assert!(extra.iter().all(|v| v.sleeping && v.behavior == Behavior::Rest));
+            // despierta: UNA sorpresa y luego se retoma lo congelado (no hay ráfaga)
+            let t_wake = slept_at + total + sl::WAKE_POLL_MS;
+            probe.set_idle(Ok(0));
+            at(&mut w, &clock, t_wake);
+            let n1 = visible_views(&host).len();
+            assert_eq!(w.fsm.view().expression, Expression::Surprised);
+            at(&mut w, &clock, t_wake + WAKE_SURPRISE_MS);
+            let after: Vec<_> = visible_views(&host)[n1..].to_vec();
+            assert!(after.len() <= 1, "total {total}: tras la sorpresa solo vuelve al estado previo ({})", after.len());
+            let d = w.fsm.next_wakeup().expect("hay un plazo propio retomado");
+            assert!(d > t_wake + WAKE_SURPRISE_MS, "el plazo se retoma hacia adelante, no vence de golpe: {d}");
+            assert!(d - (t_wake + WAKE_SURPRISE_MS) <= 90_000, "es el tiempo que quedaba, no el sueño acumulado: {d}");
+        }
+    }
+
+    #[test]
+    fn sleeping_and_waking_never_draw_from_the_rng() {
+        let cfg = EngineConfig { timings: Timings::default(), seed: Some(9), ..sleep_cfg(30_000) };
+        let (mut w, clock, _h, probe) = sleep_worker(cfg);
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        run_idle(&mut w, &clock, &probe, 0, 0, 30_000, 1_000);
+        assert!(w.fsm.view().sleeping);
+        let snapshot = w.rng.clone(); // estado del RNG justo al dormirse
+        run_idle(&mut w, &clock, &probe, 0, 30_000, 90_000, 2_000);
+        probe.set_idle(Ok(0));
+        at(&mut w, &clock, 92_000);
+        assert_eq!(w.fsm.view().expression, Expression::Surprised);
+        at(&mut w, &clock, 92_000 + WAKE_SURPRISE_MS);
+        assert!(!w.fsm.view().sleeping);
+        let (mut a, mut b) = (snapshot, w.rng.clone());
+        assert_eq!((a.u64(..), a.u64(..)), (b.u64(..), b.u64(..)), "ni dormir, ni despertar, ni la sorpresa sortean nada");
+    }
+
+    #[test]
+    fn an_error_never_makes_it_sleep_over_two_hours_and_the_retries_back_off() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        probe.set_idle(Err(ProbeError::CallFailed));
+        at(&mut w, &clock, 0);
+        let mut t = 0;
+        let mut stamps = vec![0u64];
+        while t < 120 * MIN {
+            let next = next_deadline(&w, t).expect("reintenta");
+            assert!(next > t, "no hay bucle ocupado");
+            t = next;
+            let before = probe.idle_calls();
+            at(&mut w, &clock, t);
+            if probe.idle_calls() > before {
+                stamps.push(t);
+            }
+            assert!(!w.fsm.view().sleeping, "un error nunca provoca sueño");
+        }
+        let gaps: Vec<_> = stamps.windows(2).map(|p| p[1] - p[0]).collect();
+        assert_eq!(&gaps[..5], &[5_000, 10_000, 20_000, 40_000, 60_000]);
+        assert!(gaps.iter().all(|g| *g <= sl::BACKOFF_MAX_MS));
+        // y cuando la sonda vuelve, se recupera el plazo normal
+        probe.set_idle(Ok(0));
+        at(&mut w, &clock, t + 60_000);
+        assert_eq!(w.sleep.errors, 0);
+    }
+
+    #[test]
+    fn u32_wraparound_and_implausible_deltas_are_handled_before_they_reach_the_engine() {
+        // dwTime justo antes de 2^32 y el tick ya envuelto: 21 ms de inactividad (10 + 11), no 49 días
+        assert_eq!(idle_ms_from_ticks(10, Some(u32::MAX - 10)), Ok(21));
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        probe.set_idle(idle_ms_from_ticks(10, Some(u32::MAX - 10)));
+        at(&mut w, &clock, 0);
+        assert!(!w.fsm.view().sleeping);
+        // delta > 2^31 (lectura adelantada por la carrera): cuenta como 0, no como 24 días
+        probe.set_idle(idle_ms_from_ticks(100, Some(200)));
+        assert_eq!(probe.idle_ms(), Ok(0));
+        let t = w.sleep.next.unwrap();
+        at(&mut w, &clock, t);
+        assert!(!w.fsm.view().sleeping);
+        // 24 días reales (< 2^31 ms): duerme; y nunca más de 30 días informados
+        probe.set_idle(idle_ms_from_ticks(0x7FFF_FFFF, Some(0)));
+        let t = w.sleep.next.unwrap();
+        at(&mut w, &clock, t);
+        assert!(w.fsm.view().sleeping);
+    }
+
+    #[test]
+    fn a_changed_threshold_applies_live_in_both_directions() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        // 7 min de inactividad; umbral de 10 min → comprobará a los 3 min que faltan
+        probe.set_idle(Ok(7 * MIN));
+        at_with(&mut w, &clock, 7 * MIN, vec![Cmd::SleepAfter(15 * MIN)]);
+        assert!(!w.fsm.view().sleeping);
+        assert_eq!(w.sleep.next, Some(7 * MIN + 8 * MIN), "recalcula: 15 − 7 min");
+        // bajar el umbral por debajo de la inactividad actual: duerme al instante
+        at_with(&mut w, &clock, 7 * MIN + 1_000, vec![Cmd::SleepAfter(5 * MIN)]);
+        assert!(w.fsm.view().sleeping);
+        // durmiendo, subir el umbral por encima de la inactividad: despierta (la inactividad ya no basta)
+        probe.set_idle(Ok(7 * MIN + 2_000));
+        at_with(&mut w, &clock, 7 * MIN + 2_000, vec![Cmd::SleepAfter(30 * MIN)]);
+        assert!(!w.fsm.view().sleeping);
+        assert_eq!(w.fsm.view().expression, Expression::Surprised);
+    }
+
+    #[test]
+    fn turning_the_switch_off_live_wakes_and_stops_polling_and_on_resumes_with_an_immediate_read() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        assert!(w.fsm.view().sleeping);
+        probe.set_idle(Ok(11 * MIN));
+        at_with(&mut w, &clock, 11 * MIN, vec![Cmd::SleepEnabled(false)]);
+        assert!(!w.fsm.view().sleeping, "apagar despierta");
+        assert_eq!(w.fsm.view().expression, Expression::Surprised);
+        let calls = probe.idle_calls();
+        run_idle(&mut w, &clock, &probe, 0, 11 * MIN, 60 * MIN, 5_000);
+        assert_eq!(probe.idle_calls(), calls, "apagado: ni una consulta más");
+        assert!(!w.fsm.view().sleeping, "y no vuelve a dormirse");
+        // encender con la inactividad ya pasada: lee de inmediato y duerme
+        at_with(&mut w, &clock, 60 * MIN + 1, vec![Cmd::SleepEnabled(true)]);
+        assert_eq!(probe.idle_calls(), calls + 1);
+        assert!(w.fsm.view().sleeping);
+    }
+
+    #[test]
+    fn hidden_paused_or_suppressed_never_poll_and_nothing_wakes_the_engine() {
+        for (name, on, off) in [
+            ("oculta", Cmd::Hidden(true), Cmd::Hidden(false)),
+            ("pausada", Cmd::Pause(true), Cmd::Pause(false)),
+            ("suprimida", Cmd::Suppressed(true), Cmd::Suppressed(false)),
+        ] {
+            let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+            idle_step(&mut w, &clock, &probe, 0, 0);
+            let calls = probe.idle_calls();
+            probe.set_idle(Ok(99 * MIN));
+            at_with(&mut w, &clock, 1_000, vec![on]);
+            assert_eq!(next_deadline(&w, 1_000), None, "{name}: ni un plazo");
+            for k in 1..50 {
+                at(&mut w, &clock, 1_000 + k * MIN);
+            }
+            assert_eq!(probe.idle_calls(), calls, "{name}: no se consulta la inactividad");
+            assert!(!w.fsm.view().sleeping, "{name}: no duerme sin que nadie lo mire");
+            // al volver a correr se reconsulta de inmediato
+            at_with(&mut w, &clock, 60 * MIN, vec![off]);
+            assert!(probe.idle_calls() > calls, "{name}: reconsulta al volver");
+        }
+    }
+
+    #[test]
+    fn resuming_from_the_tray_ends_the_sleep_explicitly_without_waiting_for_a_poll() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        at_with(&mut w, &clock, 10 * MIN + 1_000, vec![Cmd::Pause(true)]);
+        assert!(w.fsm.view().sleeping, "pausada conserva el estado, sin sondear");
+        let calls = probe.idle_calls();
+        // el equipo sigue sin actividad en la lectura de Windows (la persona usó el menú de la bandeja, otro hilo)
+        probe.set_idle(Ok(40 * MIN));
+        at_with(&mut w, &clock, 40 * MIN, vec![Cmd::Pause(false)]);
+        let v = w.fsm.view();
+        assert!(!v.sleeping && !v.paused, "reanudar termina el sueño ya");
+        assert_eq!(v.expression, Expression::Surprised);
+        assert!(probe.idle_calls() >= calls);
+        // la acción cuenta como actividad: Windows aún dice 40 min, pero no vuelve a dormir hasta un umbral después
+        at(&mut w, &clock, 40 * MIN + 5_000);
+        assert!(!w.fsm.view().sleeping, "no se duerme otra vez de inmediato");
+        probe.set_idle(Ok(40 * MIN + 10 * MIN));
+        at(&mut w, &clock, 50 * MIN);
+        assert!(w.fsm.view().sleeping, "un umbral después de la acción, duerme de nuevo");
+    }
+
+    #[test]
+    fn showing_a_hidden_sleeping_mascot_and_toggling_follow_also_end_the_sleep() {
+        // Mostrar
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        at_with(&mut w, &clock, 10 * MIN + 1_000, vec![Cmd::Hidden(true)]);
+        assert!(w.fsm.view().sleeping && !w.fsm.is_visible());
+        probe.set_idle(Ok(30 * MIN));
+        at_with(&mut w, &clock, 30 * MIN, vec![Cmd::Hidden(false)]);
+        assert!(!w.fsm.view().sleeping && w.fsm.is_visible());
+        // Seguir
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        probe.set_idle(Ok(11 * MIN));
+        at_with(&mut w, &clock, 11 * MIN, vec![Cmd::FollowEnabled(false)]);
+        assert!(w.fsm.view().sleeping, "desactivar Seguir no despierta");
+        at_with(&mut w, &clock, 11 * MIN + 1_000, vec![Cmd::ToggleFollow]);
+        assert!(!w.fsm.view().sleeping, "activar Seguir despierta");
+    }
+
+    #[test]
+    fn lock_and_unlock_sleep_at_once_and_wake_with_the_surprise() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        // bloqueo a los 20 s con inactividad ~0: duerme de inmediato, sin esperar el umbral
+        probe.set_idle(Ok(20_000));
+        at_with(&mut w, &clock, 20_000, vec![Cmd::Session(SessionEvent::Locked)]);
+        assert!(w.fsm.view().sleeping);
+        // mientras está bloqueada no se sondea (Windows no ve la entrada del escritorio seguro)
+        let calls = probe.idle_calls();
+        probe.set_idle(Ok(0)); // una lectura "con actividad" no la despierta: no se lee
+        for k in 1..30 {
+            at(&mut w, &clock, 20_000 + k * 2_000);
+        }
+        assert_eq!(probe.idle_calls(), calls);
+        assert!(w.fsm.view().sleeping);
+        at_with(&mut w, &clock, 120_000, vec![Cmd::Session(SessionEvent::Unlocked)]);
+        let v = w.fsm.view();
+        assert!(!v.sleeping);
+        assert_eq!(v.expression, Expression::Surprised);
+        // y el sondeo de inactividad se retoma
+        at(&mut w, &clock, 125_000);
+        assert!(probe.idle_calls() > calls);
+    }
+
+    #[test]
+    fn suspend_and_resume_behave_like_lock_and_unlock_and_a_lock_survives_the_resume() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        at_with(&mut w, &clock, 5_000, vec![Cmd::Session(SessionEvent::Suspended)]);
+        assert!(w.fsm.view().sleeping);
+        at_with(&mut w, &clock, 3_600_000, vec![Cmd::Session(SessionEvent::Resumed)]);
+        assert!(!w.fsm.view().sleeping && w.fsm.view().expression == Expression::Surprised);
+        // el salto de una hora no se interpreta como inactividad: la reanudación cuenta como actividad reciente
+        probe.set_idle(Ok(70 * MIN));
+        at(&mut w, &clock, 3_605_000);
+        assert!(!w.fsm.view().sleeping, "la inactividad de 70 min leída tras reanudar no la duerme de golpe");
+        // bloqueada + suspendida: reanudar no despierta mientras siga bloqueada
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        at_with(&mut w, &clock, 1_000, vec![Cmd::Session(SessionEvent::Locked)]);
+        at_with(&mut w, &clock, 2_000, vec![Cmd::Session(SessionEvent::Suspended)]);
+        at_with(&mut w, &clock, 9_000, vec![Cmd::Session(SessionEvent::Resumed)]);
+        assert!(w.fsm.view().sleeping, "sigue bloqueada: sigue dormida");
+        at_with(&mut w, &clock, 9_500, vec![Cmd::Session(SessionEvent::Unlocked)]);
+        assert!(!w.fsm.view().sleeping);
+    }
+
+    #[test]
+    fn session_events_are_ignored_while_the_switch_is_off_and_applied_when_it_is_turned_on_away() {
+        let (mut w, clock, _h, probe) = sleep_worker(EngineConfig { sleep_enabled: false, ..sleep_cfg(10 * MIN) });
+        probe.set_idle(Ok(0));
+        at_with(&mut w, &clock, 0, vec![Cmd::Session(SessionEvent::Locked)]);
+        assert!(!w.fsm.view().sleeping, "con el interruptor apagado el bloqueo no duerme");
+        at_with(&mut w, &clock, 1_000, vec![Cmd::SleepEnabled(true)]);
+        assert!(w.fsm.view().sleeping, "se enciende con la sesión ausente: duerme");
+        at_with(&mut w, &clock, 2_000, vec![Cmd::Session(SessionEvent::Unlocked)]);
+        assert!(!w.fsm.view().sleeping);
+    }
+
+    #[test]
+    fn the_end_of_a_suppression_episode_reappears_asleep_only_if_the_inactivity_passed_the_threshold() {
+        for (idle_during, expect_asleep) in [(15 * MIN, true), (1_000u64, false)] {
+            let cfg = EngineConfig { dnd_auto: true, ..sleep_cfg(10 * MIN) };
+            let (mut w, clock, host, probe) = sleep_worker(cfg);
+            probe.set_idle(Ok(0));
+            probe.set_notification_state(busy());
+            at(&mut w, &clock, 0);
+            at(&mut w, &clock, 2_500); // 2 lecturas: suprimida
+            assert!(w.fsm.view().suppressed && !host.visible.load(Ordering::SeqCst));
+            // durante el episodio no se sondea la inactividad (ni dormiría ni despertaría)
+            let calls = probe.idle_calls();
+            probe.set_idle(Ok(idle_during));
+            for k in 2..6 {
+                at(&mut w, &clock, k * 2_500);
+            }
+            assert_eq!(probe.idle_calls(), calls, "suprimida: sin sondeo de inactividad");
+            // fin del episodio
+            probe.set_notification_state(calm());
+            at(&mut w, &clock, 15_000);
+            at(&mut w, &clock, 17_500);
+            assert!(host.visible.load(Ordering::SeqCst) && !w.fsm.view().suppressed);
+            assert_eq!(w.fsm.view().sleeping, expect_asleep, "inactividad {idle_during}");
+            // y lo que Miel muestra en el primer instante visible ya es lo correcto (no hubo un parpadeo despierta)
+            let first_visible = visible_views(&host).last().copied().unwrap();
+            assert_eq!(first_visible.sleeping, expect_asleep);
+        }
+    }
+
+    #[test]
+    fn a_fullscreen_game_that_spans_the_threshold_does_not_sleep_it_but_it_reappears_asleep() {
+        let cfg = EngineConfig { dnd_auto: true, ..sleep_cfg(10 * MIN) };
+        let (mut w, clock, host, probe) = sleep_worker(cfg);
+        probe.set_idle(Ok(0));
+        probe.set_notification_state(busy());
+        at(&mut w, &clock, 0);
+        at(&mut w, &clock, 2_500);
+        // el juego dura 30 min con el usuario "inactivo" (viendo una cinemática): el umbral pasa estando suprimida
+        let mut t = 2_500;
+        while t < 30 * MIN {
+            t += 2_500;
+            probe.set_idle(Ok(t));
+            at(&mut w, &clock, t);
+        }
+        assert!(!w.fsm.view().sleeping, "oculta por No molestar: nada de sueño ni sondeo");
+        probe.set_notification_state(calm());
+        t += 2_500;
+        at(&mut w, &clock, t);
+        t += 2_500;
+        at(&mut w, &clock, t);
+        assert!(host.visible.load(Ordering::SeqCst) && w.fsm.view().sleeping);
+    }
+
+    #[test]
+    fn streaks_of_activity_just_before_the_threshold_keep_it_awake_with_one_read_per_period() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        let mut last_input = 0;
+        probe.set_idle(Ok(0));
+        at(&mut w, &clock, 0);
+        // cada 9 min 50 s hay actividad (justo antes del vencimiento); durante 6 h nunca duerme
+        let mut t = 0;
+        let start_calls = probe.idle_calls();
+        let mut seen_sleep = false;
+        for _ in 0..40 {
+            t = w.sleep.next.expect("próxima comprobación");
+            // en cada comprobación ya hubo actividad hace 10 s
+            last_input = t - 10_000;
+            idle_step(&mut w, &clock, &probe, last_input, t);
+            seen_sleep |= w.fsm.view().sleeping;
+        }
+        let _ = last_input;
+        assert!(!seen_sleep);
+        let calls = probe.idle_calls() - start_calls;
+        assert_eq!(calls, 40, "una consulta por comprobación, no un sondeo continuo");
+        assert!(t > 40 * 9 * MIN, "{t}");
+    }
+
+    #[test]
+    fn flapping_readings_around_the_margin_do_not_make_it_flicker() {
+        let (mut w, clock, host, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        idle_step(&mut w, &clock, &probe, 0, 0);
+        idle_step(&mut w, &clock, &probe, 0, 10 * MIN);
+        assert!(w.fsm.view().sleeping);
+        let n = visible_views(&host).len();
+        // lecturas que oscilan entre "justo en el margen" y "mucho más": nunca por debajo de umbral − margen
+        for k in 1..=40u64 {
+            let idle = if k % 2 == 0 { 10 * MIN - sl::WAKE_MARGIN_MS } else { 10 * MIN + 5_000 };
+            probe.set_idle(Ok(idle));
+            at(&mut w, &clock, 10 * MIN + k * sl::WAKE_POLL_MS);
+        }
+        assert!(w.fsm.view().sleeping);
+        assert!(visible_views(&host).len() <= n + 1, "como mucho el paso sleepy→resting");
+    }
+
+    #[test]
+    fn the_wake_up_scheduler_wakes_are_counted_per_state_label() {
+        let (mut w, _c, _h, _p) = sleep_worker(sleep_cfg(10 * MIN));
+        assert_eq!(w.wake_label(), "idle");
+        w.fsm.set_sleeping(0, true);
+        assert_eq!(w.wake_label(), "durmiendo");
+        w.fsm.set_paused(0, true);
+        assert_eq!(w.wake_label(), "pausada");
+        w.fsm.set_hidden(0, true);
+        assert_eq!(w.wake_label(), "oculta");
+        w.fsm.set_hidden(0, false);
+        w.fsm.set_paused(0, false);
+        w.fsm.set_suppressed(0, true);
+        assert_eq!(w.wake_label(), "suprimida");
     }
 }

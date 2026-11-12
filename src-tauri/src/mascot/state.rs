@@ -80,6 +80,9 @@ impl Default for Timings {
     }
 }
 
+/// Duración de la reacción de sorpresa al despertar (breve; no es una `Reaction` normal de 5–7 s).
+pub const WAKE_SURPRISE_MS: Ms = 1_500;
+
 /// Supresión automática EN VIGOR: hay un episodio (`suppressed`) y la persona no lo ha anulado.
 pub fn suppression_active(suppressed: bool, dnd_override: bool) -> bool {
     suppressed && !dnd_override
@@ -171,6 +174,8 @@ pub struct Fsm {
     sleep_settle_at: Option<Ms>,
     /// Sueño: tiempo restante hasta `resting` mientras está suspendida.
     sleep_settle_rem: Option<Ms>,
+    /// La `Reaction` en curso es la sorpresa de despertar (E5): sin mensaje y sin consumir el cooldown de reacciones.
+    waking: bool,
     follow_enabled: bool,
     timers: Timers,
     /// Tiempo restante congelado mientras los plazos están detenidos (`!running` o `sleeping`).
@@ -197,6 +202,7 @@ impl Fsm {
             sleep_resting: false,
             sleep_settle_at: None,
             sleep_settle_rem: None,
+            waking: false,
             follow_enabled: true,
             timers: Timers { deadline: now + d, settle_at: None },
             frozen: None,
@@ -272,7 +278,7 @@ impl Fsm {
     }
 
     pub fn messages_allowed(&self) -> bool {
-        messages_allowed(self.hidden, self.paused, self.suppressed, self.dnd_override, self.sleeping)
+        messages_allowed(self.hidden, self.paused, self.suppressed, self.dnd_override, self.sleeping) && !self.waking
     }
 
     /// `!running`; con `suppressed = false` es exactamente `paused || hidden` (v0.1.0).
@@ -352,16 +358,44 @@ impl Fsm {
 
     /// Entra o sale del sueño. Los plazos propios se congelan (no se descartan) mientras duerme.
     pub fn set_sleeping(&mut self, now: Ms, sleeping: bool) -> bool {
+        self.mutate(|s| s.apply_sleeping(now, sleeping))
+    }
+
+    /// Despierta con una sorpresa breve (E5, D6): `sleeping = false`, los plazos congelados se retoman con el tiempo
+    /// que les quedaba y, si Miel está corriendo (visible y sin pausa), una `Reaction` de `Surprised` de
+    /// `WAKE_SURPRISE_MS` que NO consume `reaction_cooldown`, no espera a que expire, no lleva mensaje y no sortea
+    /// nada (sin RNG). Al terminar vuelve al comportamiento interrumpido con su tiempo restante. Si no duerme, no hace nada.
+    pub fn wake(&mut self, now: Ms) -> bool {
         self.mutate(|s| {
-            if s.sleeping == sleeping {
+            if !s.sleeping {
                 return;
             }
-            s.sleeping = sleeping;
-            s.sleep_resting = false;
-            s.sleep_settle_at = None;
-            s.sleep_settle_rem = sleeping.then_some(s.t.rest_settle);
-            s.sync_suspension(now);
+            s.apply_sleeping(now, false);
+            // Ya hay una reacción en curso (se durmió durante ella): esa reacción es la sorpresa; no se anida otra.
+            if s.is_running() && s.behavior != Behavior::Reaction {
+                s.resume = Some(Resume {
+                    behavior: s.behavior,
+                    remaining: s.timers.deadline.saturating_sub(now),
+                    settled: s.behavior == Behavior::Rest && s.timers.settle_at.is_none(),
+                });
+                s.behavior = Behavior::Reaction;
+                s.expression = Expression::Surprised;
+                s.timers = Timers { deadline: now + WAKE_SURPRISE_MS, settle_at: None };
+                s.waking = true;
+            }
         })
+    }
+
+    /// Cambio de `sleeping` sin versión (lo envuelve `mutate` en los puntos de entrada).
+    fn apply_sleeping(&mut self, now: Ms, sleeping: bool) {
+        if self.sleeping == sleeping {
+            return;
+        }
+        self.sleeping = sleeping;
+        self.sleep_resting = false;
+        self.sleep_settle_at = None;
+        self.sleep_settle_rem = sleeping.then_some(self.t.rest_settle);
+        self.sync_suspension(now);
     }
 
     /// Deshabilitar el seguimiento cancela un Follow en curso.
@@ -456,6 +490,7 @@ impl Fsm {
         self.behavior = Behavior::Idle;
         self.expression = Expression::Idle;
         let idle = range(rng, self.t.idle);
+        self.waking = false;
         self.timers = Timers { deadline: now + idle, settle_at: None };
         if self.frozen.is_some() {
             // suspendido (pausa/oculto): al reanudar debe correr el plazo de Idle, no el del Follow cancelado
@@ -536,7 +571,10 @@ impl Fsm {
 
     /// Fin de la reacción: vuelve al comportamiento anterior con el tiempo que le quedaba.
     fn end_reaction(&mut self, now: Ms, rng: &mut fastrand::Rng) {
-        self.last_reaction_end = Some(now);
+        // La sorpresa de despertar no cuenta para el cooldown de reacciones.
+        if !std::mem::take(&mut self.waking) {
+            self.last_reaction_end = Some(now);
+        }
         match self.resume.take() {
             Some(Resume { behavior: Behavior::Rest, remaining, settled }) => {
                 self.behavior = Behavior::Rest;
@@ -1189,5 +1227,82 @@ mod tests {
         // campos nuevos, aditivos y falsos
         assert_eq!((j["suppressed"].as_bool(), j["sleeping"].as_bool()), (Some(false), Some(false)));
         assert_eq!(j.as_object().unwrap().len(), 9, "exactamente los 7 de v0.1.0 + suppressed + sleeping");
+    }
+
+    // ---- E5: despertar con una sorpresa breve ----
+
+    #[test]
+    fn wake_shows_a_short_surprise_then_resumes_the_frozen_behavior_with_its_remaining_time() {
+        let (mut f, mut r) = with_flags(false, false, false, false);
+        // Idle con plazo en t=1000 (timings de prueba)
+        f.set_sleeping(300, true); // quedaban 700 de Idle
+        assert!(f.wake(50_000));
+        let v = f.view();
+        assert_eq!((v.behavior, v.expression, v.sleeping), (Behavior::Reaction, Expression::Surprised, false));
+        assert!(!f.messages_allowed(), "sin mensajes durante la sorpresa");
+        assert_eq!(f.next_wakeup(), Some(50_000 + WAKE_SURPRISE_MS));
+        assert!(!f.step(50_000 + WAKE_SURPRISE_MS - 1, &mut r));
+        assert!(f.step(50_000 + WAKE_SURPRISE_MS, &mut r));
+        let v = f.view();
+        assert_eq!((v.behavior, v.expression), (Behavior::Idle, Expression::Idle));
+        assert!(f.messages_allowed());
+        assert_eq!(f.next_wakeup(), Some(50_000 + WAKE_SURPRISE_MS + 700), "retoma lo congelado: 700 ms, no 0");
+    }
+
+    #[test]
+    fn the_wake_surprise_does_not_consume_the_reaction_cooldown_nor_the_rng() {
+        let (mut f, mut r) = with_flags(false, false, false, false);
+        f.set_sleeping(300, true);
+        let mut before = r.clone();
+        f.wake(10_000);
+        f.step(10_000 + WAKE_SURPRISE_MS, &mut r);
+        assert!(f.last_reaction_end.is_none() && f.last_reaction_expr.is_none(), "no cuenta como reacción");
+        assert_eq!((before.u64(..), before.u64(..)), (r.u64(..), r.u64(..)), "sin sorteos");
+        // y una reacción normal inmediatamente después NO está bloqueada por el cooldown
+        assert!(Fsm::off_cooldown(f.last_reaction_end, 10_000 + WAKE_SURPRISE_MS, f.t.reaction_cooldown));
+    }
+
+    #[test]
+    fn waking_from_a_sleep_that_began_in_rest_returns_to_rest_with_its_time() {
+        let (mut f, mut r) = with_flags(false, false, false, false);
+        f.enter(Behavior::Rest, 0, &mut r); // Rest 2000, sleepy→resting a los 400
+        f.step(500, &mut r);
+        f.set_sleeping(600, true); // quedaban 1400 de Rest (ya `resting`)
+        f.wake(5_000);
+        assert_eq!(f.view().expression, Expression::Surprised);
+        f.step(5_000 + WAKE_SURPRISE_MS, &mut r);
+        let v = f.view();
+        assert_eq!((v.behavior, v.expression), (Behavior::Rest, Expression::Resting));
+        assert_eq!(f.next_wakeup(), Some(5_000 + WAKE_SURPRISE_MS + 1_400));
+    }
+
+    #[test]
+    fn wake_without_sleep_or_while_not_running_is_quiet() {
+        let (mut f, _r) = with_flags(false, false, false, false);
+        let v0 = f.view().version;
+        assert!(!f.wake(1_000) && f.view().version == v0, "despierta no hace nada");
+        // dormida pero pausada: se despierta sin sorpresa (nadie la ve) y retoma al reanudar
+        f.set_sleeping(0, true);
+        f.set_paused(10, true);
+        assert!(f.wake(20));
+        let v = f.view();
+        assert!(!v.sleeping && v.expression == Expression::Idle && v.paused);
+        // oculta: igual
+        let (mut f, _r) = with_flags(true, false, false, true);
+        assert!(f.wake(20));
+        assert!(!f.view().sleeping && f.view().expression == Expression::Idle);
+    }
+
+    #[test]
+    fn sleeping_again_during_the_surprise_does_not_nest_a_second_one() {
+        let (mut f, mut r) = with_flags(false, false, false, false);
+        f.set_sleeping(300, true);
+        f.wake(10_000);
+        f.set_sleeping(10_500, true); // se vuelve a dormir con la sorpresa a medias
+        assert_eq!(f.view().expression, Expression::Sleepy);
+        f.wake(20_000);
+        assert_eq!(f.view().expression, Expression::Surprised, "la reacción que quedaba, no otra encima");
+        f.step(20_000 + 1_000, &mut r); // quedaban 1000 ms de los 1500
+        assert_eq!(f.view().behavior, Behavior::Idle);
     }
 }

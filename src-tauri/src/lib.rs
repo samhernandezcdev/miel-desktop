@@ -5,6 +5,8 @@ mod display_watch;
 mod errlog;
 mod lifecycle;
 pub mod mascot;
+#[cfg(windows)]
+mod session_watch;
 mod settings;
 pub mod settings_window;
 pub mod tray;
@@ -63,8 +65,9 @@ fn get_settings(store: tauri::State<'_, Arc<SettingsStore>>) -> Settings {
 
 /// E2 · Cambia UN ajuste. Rust es la única fuente de verdad: valida clave y tipo, sanea rangos y
 /// devuelve las preferencias aplicadas; si hubo un cambio real, emite `settings://changed` a la
-/// ventana `settings`. El frontend no decide nada. Solo `dnd_auto_enabled` actúa sobre el motor en vivo
-/// (E4b, ver `live_command`); el resto de ajustes se aplica al reiniciar, como en v0.1.0.
+/// ventana `settings`. El frontend no decide nada. Solo `dnd_auto_enabled` (E4b), `sleep_enabled` y
+/// `sleep_after_minutes` (E5) actúan sobre el motor en vivo (ver `live_command`); el resto de ajustes se aplica
+/// al reiniciar, como en v0.1.0.
 #[tauri::command]
 fn set_setting(
     app: tauri::AppHandle,
@@ -97,10 +100,21 @@ pub(crate) fn apply_setting(
     Ok(applied)
 }
 
-/// Orden que un ajuste cambiado manda al motor EN VIVO. Hoy solo «No molestar automático» (E4b): apagarlo termina
-/// el episodio y detiene el sondeo, encenderlo lo reanuda. Todos los demás ajustes se aplican al reiniciar.
+/// Orden que un ajuste cambiado manda al motor EN VIVO. «No molestar automático» (E4b): apagarlo termina el
+/// episodio y detiene el sondeo, encenderlo lo reanuda. «Sueño» (E5): apagarlo despierta y detiene el sondeo;
+/// cambiar el tiempo recalcula el plazo al instante. Todos los demás ajustes se aplican al reiniciar.
 fn live_command(key: &str, applied: &Settings) -> Option<Cmd> {
-    (key == "dnd_auto_enabled").then_some(Cmd::DndAuto(applied.dnd_auto_enabled))
+    match key {
+        "dnd_auto_enabled" => Some(Cmd::DndAuto(applied.dnd_auto_enabled)),
+        "sleep_enabled" => Some(Cmd::SleepEnabled(applied.sleep_enabled)),
+        "sleep_after_minutes" => Some(Cmd::SleepAfter(sleep_after_ms(applied.sleep_after_minutes))),
+        _ => None,
+    }
+}
+
+/// Umbral de sueño en ms del reloj del motor.
+fn sleep_after_ms(minutes: u32) -> u64 {
+    u64::from(minutes) * 60_000
 }
 
 /// Informe de un error del frontend (React/WebView2). Se sanea, se limita en cantidad y tamaño y
@@ -162,6 +176,35 @@ fn watch_displays(app: &tauri::AppHandle, win: &WebviewWindow) {
     let _ = (app, win);
 }
 
+/// Avisos nativos de bloqueo de sesión y suspensión/reanudación (E5, `session_watch`). Si no se pueden instalar,
+/// Miel sigue funcionando: solo se pierde el sueño inmediato al bloquear/suspender (el umbral por inactividad sigue).
+fn watch_session(app: &tauri::AppHandle, win: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        let handle = app.clone();
+        match win.hwnd() {
+            Ok(hwnd) => {
+                let r = session_watch::install(hwnd, move |ev| {
+                    if let Some(engine) = handle.try_state::<Engine>() {
+                        engine.send(Cmd::Session(ev));
+                    }
+                });
+                match r {
+                    Ok(watch) => {
+                        if let Some(slot) = app.try_state::<lifecycle::SessionSlot>() {
+                            *slot.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(watch);
+                        }
+                    }
+                    Err(e) => eprintln!("[miel] sin aviso de sesión/energía: {e}"),
+                }
+            }
+            Err(e) => eprintln!("[miel] sin HWND para el aviso de sesión/energía: {e}"),
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (app, win);
+}
+
 /// Sonda del sistema del motor: `WindowsProbe` (solo lectura: `SHQueryUserNotificationState`). Con `diag`,
 /// `MIEL_DIAG_NOTIF` la sustituye por una sonda programada (no se consulta a Windows).
 fn system_probe() -> Option<Arc<dyn mascot::probe::SystemProbe>> {
@@ -188,6 +231,8 @@ fn engine_config(s: &Settings) -> EngineConfig {
         initial_follow: s.follow_enabled,
         initial_paused: s.paused,
         dnd_auto: s.dnd_auto_enabled,
+        sleep_enabled: s.sleep_enabled,
+        sleep_after_ms: sleep_after_ms(s.sleep_after_minutes),
         talker: TalkerConfig {
             enabled: s.messages_enabled,
             cooldown: u64::from(s.message_interval_minutes) * 60_000,
@@ -216,6 +261,11 @@ fn engine_config(s: &Settings) -> EngineConfig {
     #[cfg(any(debug_assertions, feature = "diag"))]
     {
         cfg.seed = diag_seed(std::env::var("MIEL_SEED").ok().as_deref()).or(cfg.seed);
+        // `MIEL_DIAG_SLEEP_SECS=<segundos>`: umbral de sueño inicial en SEGUNDOS (para probar en la app real sin esperar
+        // minutos). Solo diagnóstico; un cambio del ajuste `sleep_after_minutes` en vivo lo sustituye (en minutos).
+        if let Some(ms) = diag::sleep_secs_to_ms(std::env::var("MIEL_DIAG_SLEEP_SECS").ok().as_deref()) {
+            cfg.sleep_after_ms = ms;
+        }
     }
     cfg
 }
@@ -266,6 +316,7 @@ pub fn run() {
         }))
         .manage(Lifecycle::default())
         .manage(lifecycle::WatchSlot::default())
+        .manage(lifecycle::SessionSlot::default())
         .invoke_handler(tauri::generate_handler![
             get_view,
             get_display_prefs,
@@ -315,6 +366,7 @@ pub fn run() {
                 return Err(e);
             }
             watch_displays(app.handle(), &win);
+            watch_session(app.handle(), &win);
             #[cfg(any(debug_assertions, feature = "diag"))]
             {
                 diag::spawn_script(app.handle());
@@ -387,9 +439,28 @@ mod tests {
         let off = Settings { dnd_auto_enabled: false, ..Settings::default() };
         assert_eq!(live_command("dnd_auto_enabled", &on), Some(Cmd::DndAuto(true)));
         assert_eq!(live_command("dnd_auto_enabled", &off), Some(Cmd::DndAuto(false)));
-        for k in settings::SETTABLE_KEYS.iter().filter(|k| **k != "dnd_auto_enabled") {
+        // (E5: los dos ajustes de «Sueño» también son en vivo; ver la prueba siguiente)
+        for k in settings::SETTABLE_KEYS.iter().filter(|k| !LIVE_KEYS.contains(k)) {
             assert_eq!(live_command(k, &off), None, "{k}: se aplica al reiniciar");
         }
+    }
+
+    const LIVE_KEYS: [&str; 3] = ["dnd_auto_enabled", "sleep_enabled", "sleep_after_minutes"];
+
+    #[test]
+    fn the_sleep_settings_act_on_the_running_engine_in_ms_of_the_engine_clock() {
+        let s = Settings { sleep_enabled: false, sleep_after_minutes: 30, ..Settings::default() };
+        assert_eq!(live_command("sleep_enabled", &s), Some(Cmd::SleepEnabled(false)));
+        assert_eq!(live_command("sleep_enabled", &Settings::default()), Some(Cmd::SleepEnabled(true)));
+        assert_eq!(live_command("sleep_after_minutes", &s), Some(Cmd::SleepAfter(30 * 60_000)));
+        for m in [5u32, 10, 15, 30, 60] {
+            assert_eq!(sleep_after_ms(m), u64::from(m) * 60_000);
+        }
+        // y el arranque usa los mismos valores
+        let c = engine_config(&s);
+        assert!(!c.sleep_enabled && c.sleep_after_ms == 30 * 60_000);
+        let d = engine_config(&Settings::default());
+        assert!(d.sleep_enabled && d.sleep_after_ms == 10 * 60_000, "por defecto: activado, 10 min");
     }
 
     #[cfg(any(debug_assertions, feature = "diag"))]

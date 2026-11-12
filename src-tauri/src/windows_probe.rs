@@ -79,4 +79,26 @@ mod tests {
         // Con el sondeo cada 2,5 s (0,4 Hz): fracción de un núcleo = per[µs] * 0,4 / 1e6
         println!("coste estimado del sondeo a 0,4 Hz: {:.6} % de un núcleo", per * 0.4 / 1e6 * 100.0);
     }
+
+    /// Microbenchmark MANUAL (ignorado por defecto): coste de UNA lectura real de `GetLastInputInfo` + `GetTickCount`.
+    /// `cargo test --release --lib windows_probe -- --ignored --nocapture`. Solo lectura; sin efectos en el sistema.
+    #[test]
+    #[ignore = "medición manual; no es una prueba funcional"]
+    fn bench_one_idle_query() {
+        let p = WindowsProbe::new();
+        for _ in 0..200 {
+            let _ = p.idle_ms(); // calentamiento
+        }
+        let n = 200_000u32;
+        let t0 = std::time::Instant::now();
+        let mut ok = 0u32;
+        for _ in 0..n {
+            ok += u32::from(std::hint::black_box(p.idle_ms()).is_ok());
+        }
+        let el = t0.elapsed();
+        let per = el.as_secs_f64() * 1e6 / f64::from(n);
+        println!("GetLastInputInfo + GetTickCount: {per:.3} µs por consulta ({ok}/{n} correctas, {el:?} en total)");
+        // Despierta apenas hay una comprobación por umbral (≈ 1 cada 10 min) y durmiendo una cada 2 s (0,5 Hz)
+        println!("coste estimado durmiendo (0,5 Hz): {:.6} % de un núcleo", per * 0.5 / 1e6 * 100.0);
+    }
 }

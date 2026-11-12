@@ -276,6 +276,15 @@ impl Talker {
         changed
     }
 
+    /// Impide hablar durante al menos `ms` más (E5: respiro tras despertar). No acorta un cooldown mayor y funciona
+    /// igual con el hablante suspendido (el plazo congelado se alarga) que activo.
+    pub fn hold_off(&mut self, now: Ms, ms: Ms) {
+        match self.frozen.as_mut() {
+            Some(rem) => *rem = (*rem).max(ms),
+            None => self.next_due = self.next_due.max(now + ms),
+        }
+    }
+
     /// Termina el mensaje cuando vence su duración.
     pub fn step(&mut self, now: Ms) -> bool {
         match self.showing {

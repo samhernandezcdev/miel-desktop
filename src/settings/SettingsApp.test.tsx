@@ -32,7 +32,7 @@ function fakeRust(initial: SettingsData = base()) {
     get: vi.fn(async () => ({ ...state })),
     set: vi.fn(async (key, value) => {
       calls.push([key, value]);
-      const isBool = key === "messages_enabled" || key === "reduced_motion" || key === "dnd_auto_enabled";
+      const isBool = key === "messages_enabled" || key === "reduced_motion" || key === "dnd_auto_enabled" || key === "sleep_enabled";
       if (isBool ? typeof value !== "boolean" : typeof value !== "number") throw "tipo erróneo";
       let v = value;
       if (key === "speed") v = Math.min(600, Math.max(60, value as number)); // Rust sanea el rango
@@ -99,16 +99,17 @@ describe("carga", () => {
     expect(isChecked(screen.getByLabelText(es.petSize.options["96"]))).toBe(false);
   });
 
-  it("NO muestra seguimiento ni pausa (solo bandeja) ni los interruptores de v0.2.0 que aún no existen (solo No molestar, E4b)", async () => {
+  it("NO muestra seguimiento ni pausa (solo bandeja) ni los interruptores de v0.2.0 que aún no existen (solo No molestar, E4b, y Sueño, E5)", async () => {
     await ready();
     const text = document.body.textContent ?? "";
-    // los nombres de esos ajustes no aparecen como controles: los únicos interruptores son los 2 de v0.1.0 + No molestar
+    // los nombres de esos ajustes no aparecen como controles: los únicos interruptores son los 2 de v0.1.0 + No molestar + Sueño
     const switches = screen.getAllByRole("switch").map((e) => e.getAttribute("id"));
-    expect(switches).toHaveLength(3);
+    expect(switches).toHaveLength(4);
+    expect(screen.getAllByRole("combobox")).toHaveLength(1); // el tiempo de sueño
     expect(screen.getAllByRole("radio")).toHaveLength(3);
     expect(screen.getAllByRole("spinbutton")).toHaveLength(2);
     expect(screen.queryByRole("button")).toBeNull();
-    for (const banned of ["Dormir", "Sueño", "Proximidad", "Hora del día", "dnd", "sleep", "proximity"]) {
+    for (const banned of ["Proximidad", "Hora del día", "dnd", "proximity"]) {
       expect(text).not.toContain(banned);
     }
   });
@@ -323,7 +324,7 @@ describe("idioma y accesibilidad", () => {
   it("todos los controles son nativos, alcanzables por teclado y sin tabindex positivo", async () => {
     await ready();
     const controls = [...document.querySelectorAll("input, button, select, textarea")] as HTMLElement[];
-    expect(controls.length).toBe(8);
+    expect(controls.length).toBe(10);
     for (const c of controls) {
       expect(Number(c.getAttribute("tabindex") ?? 0), c.outerHTML).toBeLessThanOrEqual(0);
       expect(c.hasAttribute("disabled")).toBe(false);
@@ -331,7 +332,7 @@ describe("idioma y accesibilidad", () => {
     expect(document.querySelectorAll("[onclick], [style]").length).toBe(0);
     // un solo h1 y secciones con título
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(5);
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(6);
   });
 
   it("dice qué ajustes se aplican al reiniciar (banner + una nota por ajuste) y que seguimiento/pausa están en la bandeja", async () => {
@@ -432,3 +433,86 @@ describe("No molestar automático (E4b)", () => {
     expect(en.restartBanner).toMatch(/except “No molestar automático”/);
   });
 });
+
+describe("Sueño (E5)", () => {
+  const sleepSwitch = () => screen.getByRole("switch", { name: es.sleep.label });
+  const sleepSelect = () => screen.getByLabelText(es.sleep.after.label) as HTMLSelectElement;
+  const describedText = (el: HTMLElement) =>
+    (el.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+
+  it("lee los valores reales: interruptor, tiempo, ayuda y la nota «se aplica de inmediato»", async () => {
+    await ready(fakeRust(base({ sleep_enabled: false, sleep_after_minutes: 30 })));
+    expect(sleepSwitch().getAttribute("role")).toBe("switch");
+    expect(isChecked(sleepSwitch())).toBe(false);
+    expect(sleepSelect().value).toBe("30");
+    for (const el of [sleepSwitch(), sleepSelect()]) {
+      const text = describedText(el);
+      expect(text).toContain(el === sleepSwitch() ? es.sleep.hint : es.sleep.after.hint);
+      expect(text).toContain(es.appliesNow);
+      expect(text).not.toContain(es.appliesOnRestart);
+    }
+  });
+
+  it("el selector ofrece exactamente 5, 10, 15, 30 y 60 minutos", async () => {
+    await ready();
+    expect(within(sleepSelect()).getAllByRole("option").map((o) => (o as HTMLOptionElement).value)).toEqual(["5", "10", "15", "30", "60"]);
+    expect(within(sleepSelect()).getAllByRole("option").map((o) => o.textContent)).toEqual(["5 minutos", "10 minutos", "15 minutos", "30 minutos", "60 minutos"]);
+  });
+
+  it("envía el booleano y el número con set_setting y refleja el valor aplicado", async () => {
+    const { r } = await ready();
+    expect(isChecked(sleepSwitch())).toBe(true);
+    fireEvent.click(sleepSwitch());
+    await waitFor(() => expect(isChecked(sleepSwitch())).toBe(false));
+    fireEvent.change(sleepSelect(), { target: { value: "15" } });
+    await waitFor(() => expect(sleepSelect().value).toBe("15"));
+    expect(r.calls).toEqual([
+      ["sleep_enabled", false],
+      ["sleep_after_minutes", 15],
+    ]);
+    expect(r.real().sleep_enabled).toBe(false);
+    expect(r.real().sleep_after_minutes).toBe(15);
+  });
+
+  it("si Rust lo rechaza, avisa con el nombre del ajuste y restaura el valor real", async () => {
+    const r = fakeRust();
+    (r.api.set as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      throw "rechazado";
+    });
+    await ready(r);
+    fireEvent.change(sleepSelect(), { target: { value: "60" } });
+    await screen.findByText(`No se pudo cambiar «${es.sleep.after.label}»: el valor no es válido. Se restauró el valor actual.`);
+    expect(sleepSelect().value).toBe("10");
+  });
+
+  it("sigue a Rust cuando el cambio llega por el evento", async () => {
+    const { r } = await ready();
+    r.pushFromRust({ sleep_enabled: false, sleep_after_minutes: 5 });
+    await waitFor(() => expect(isChecked(sleepSwitch())).toBe(false));
+    expect(sleepSelect().value).toBe("5");
+  });
+
+  it("está en una sección propia y en inglés cambia el texto", async () => {
+    await ready(fakeRust(), "en");
+    const section = screen.getByRole("heading", { name: en.sections.sleep }).closest("section")!;
+    present(within(section).getByRole("switch", { name: en.sleep.label }));
+    present(within(section).getByLabelText(en.sleep.after.label));
+    expect(en.sleep.label).not.toBe(es.sleep.label);
+    expect(within(section).getAllByText(en.appliesNow).length).toBe(2);
+  });
+
+  it("el texto dice qué hace, lo del bloqueo y la suspensión, y que se aplica de inmediato (es + en)", () => {
+    expect(es.sleep.hint).toMatch(/teclado ni el ratón/);
+    expect(es.sleep.hint).toMatch(/bloqueas la sesión/);
+    expect(es.sleep.hint).toMatch(/suspende/);
+    expect(en.sleep.hint).toMatch(/keyboard or the mouse/);
+    expect(en.sleep.hint).toMatch(/lock the session/);
+    expect(es.restartBanner).toMatch(/«Sueño»/);
+    expect(en.restartBanner).toMatch(/“Sueño”/);
+  });
+});
+

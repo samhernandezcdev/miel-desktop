@@ -84,6 +84,15 @@ pub struct WatchSlot(pub Mutex<Option<crate::display_watch::DisplayWatch>>);
 #[derive(Default)]
 pub struct WatchSlot(pub Mutex<Option<()>>);
 
+/// Asa de los avisos de sesión/energía (E5); se retira con la de pantalla al cerrar.
+#[cfg(windows)]
+#[derive(Default)]
+pub struct SessionSlot(pub Mutex<Option<crate::session_watch::SessionWatch>>);
+
+#[cfg(not(windows))]
+#[derive(Default)]
+pub struct SessionSlot(pub Mutex<Option<()>>);
+
 /// Primera parte del cierre, segura desde el hilo principal y repetible: ordena parar el motor
 /// (sin esperar) y retira la subclase nativa de la ventana. Devuelve `true` la primera vez.
 pub fn begin_shutdown(app: &AppHandle) -> bool {
@@ -99,6 +108,13 @@ pub fn begin_shutdown(app: &AppHandle) -> bool {
             if crate::DIAG {
                 eprintln!("[miel] cierre: subclase retirada ahora={removed}");
             }
+        }
+    }
+    #[cfg(windows)]
+    if let Some(slot) = app.try_state::<SessionSlot>() {
+        let watch = slot.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(w) = watch.as_ref() {
+            w.remove(); // idempotente
         }
     }
     first

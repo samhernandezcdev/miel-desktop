@@ -1,0 +1,1 @@
+{"start_ms":1794453307610,"seconds":205,"exited_early":false,"idle":"0@0,0@45,0@100,0@125","sleep_secs":"20","script":"follow_off@1,lock@105,unlock@125,hide@150,show@160","ui":"set:sleep_enabled=false@75,set:sleep_enabled=true@85,set:sleep_after_minutes=30@185"}

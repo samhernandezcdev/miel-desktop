@@ -18,6 +18,8 @@ function noticeText(n: Notice, t: Strings): string {
     speed: t.speed.label,
     reduced_motion: t.reducedMotion.label,
     dnd_auto_enabled: t.dnd.label,
+    sleep_enabled: t.sleep.label,
+    sleep_after_minutes: t.sleep.after.label,
   }[n.key];
   return n.kind === "rejected" ? fill(t.rejected, { name }) : fill(t.adjusted, { name, value: String(n.applied) });
 }
@@ -61,6 +63,35 @@ function Switch(props: { id: string; label: string; hint: string; restart: strin
     </Field>
   );
 }
+
+/** Selector de una lista cerrada de valores numéricos (el valor que se envía es el número, tal cual; Rust valida). */
+function SelectField(props: {
+  id: string;
+  label: string;
+  hint: string;
+  restart: string;
+  value: number;
+  options: { value: number; text: string }[];
+  onChange: (v: number) => void;
+}) {
+  const { id, value, options, onChange } = props;
+  return (
+    <Field id={id} label={props.label} hint={props.hint} restart={props.restart} inline>
+      {(describedBy) => (
+        <select id={id} className="select" value={String(value)} aria-describedby={describedBy} onChange={(e) => onChange(Number(e.target.value))}>
+          {options.map((o) => (
+            <option key={o.value} value={String(o.value)}>
+              {o.text}
+            </option>
+          ))}
+        </select>
+      )}
+    </Field>
+  );
+}
+
+/** Valores permitidos del tiempo de sueño (los mismos que acepta Rust). */
+export const SLEEP_MINUTES = [5, 10, 15, 30, 60] as const;
 
 /**
  * Campo numérico. El texto se envía TAL CUAL lo escribió la persona (como número si lo es); si no es
@@ -235,6 +266,27 @@ export default function SettingsApp({ api = tauriApi, lang }: Props) {
               restart={t.appliesNow}
               checked={settings.dnd_auto_enabled}
               onChange={(v) => void set("dnd_auto_enabled")(v)}
+            />
+          </section>
+
+          <section aria-labelledby={`${uid}-sleep`}>
+            <h2 id={`${uid}-sleep`}>{t.sections.sleep}</h2>
+            <Switch
+              id={`${uid}-sleep-on`}
+              label={t.sleep.label}
+              hint={t.sleep.hint}
+              restart={t.appliesNow}
+              checked={settings.sleep_enabled}
+              onChange={(v) => void set("sleep_enabled")(v)}
+            />
+            <SelectField
+              id={`${uid}-sleep-after`}
+              label={t.sleep.after.label}
+              hint={t.sleep.after.hint}
+              restart={t.appliesNow}
+              value={settings.sleep_after_minutes}
+              options={SLEEP_MINUTES.map((n) => ({ value: n, text: fill(t.sleep.after.option, { n }) }))}
+              onChange={(v) => void set("sleep_after_minutes")(v)}
             />
           </section>
         </form>
