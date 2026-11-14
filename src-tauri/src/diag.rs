@@ -191,7 +191,7 @@ impl ScriptedProbe {
 impl SystemProbe for ScriptedProbe {
     fn idle_ms(&self) -> Result<u64, ProbeError> {
         let elapsed = self.start.elapsed().as_millis() as u64;
-        let idx = self.idle.iter().rposition(|(t, _)| t * 1000 <= elapsed).map_or(usize::MAX - 1, |i| i);
+        let idx = self.idle.iter().rposition(|(t, _)| t * 1000 <= elapsed).unwrap_or(usize::MAX - 1);
         if self.last_idle_logged.swap(idx, Ordering::SeqCst) != idx {
             let unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
             eprintln!(
@@ -205,7 +205,7 @@ impl SystemProbe for ScriptedProbe {
 
     fn notification_state(&self) -> NotifReading {
         let secs = self.start.elapsed().as_secs();
-        let idx = self.script.iter().rposition(|(t, _)| *t <= secs).map_or(usize::MAX - 1, |i| i);
+        let idx = self.script.iter().rposition(|(t, _)| *t <= secs).unwrap_or(usize::MAX - 1);
         if self.last_logged.swap(idx, Ordering::SeqCst) != idx {
             let unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
             eprintln!("[miel] t={unix_ms} diag: la sonda simulada devuelve {:?} (a los {secs} s)", notif_at(&self.script, secs));
