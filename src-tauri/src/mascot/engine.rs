@@ -621,6 +621,9 @@ impl<H: Host> Worker<H> {
             SessionEvent::Unlocked => self.sleep.away.locked = false,
             SessionEvent::Resumed => self.sleep.away.suspended = false,
         }
+        if crate::DIAG {
+            eprintln!("[miel] Sueño: aviso de sesión {ev:?}; ausente={:?}; interruptor={}", self.sleep.away, self.sleep.enabled);
+        }
         if !self.sleep.enabled {
             return false;
         }
@@ -3012,5 +3015,318 @@ mod tests {
         w.fsm.set_paused(0, false);
         w.fsm.set_suppressed(0, true);
         assert_eq!(w.wake_label(), "suprimida");
+    }
+
+    // ---- E5.1: pruebas aleatorias con modelo (FakeClock + FakeProbe, sin hilos ni esperas reales) ----
+    //
+    // Cada secuencia sale de una semilla: `fuzz_one(semilla)` es reproducible. `MIEL_FUZZ_SEQS=<n>` cambia cuántas se
+    // ejecutan (por defecto 10 000) y `MIEL_FUZZ_SEED=<s>` repite solo una (para reproducir un fallo).
+
+    use super::super::sleep::Away;
+
+    struct FuzzStats {
+        deadline_ticks: u64,
+        max_asleep_wakes_per_min: Ms,
+    }
+
+    /// Mundo simulado: lo que ocurre de verdad, independientemente de lo que el motor sepa.
+    struct World {
+        last_input: Ms,
+        probe_err: bool,
+        locked: bool,
+        suspended: bool,
+        notif_busy: bool,
+    }
+
+    /// Comprueba los invariantes tras un paso en `t`. `deadline_tick`: el paso lo provocó un plazo (sin órdenes).
+    fn fuzz_check(w: &Worker<Fake>, world: &World, t: Ms) -> Result<(), String> {
+        let v = w.fsm.view();
+        // la vista emitida coincide con la derivada del estado
+        let derived = compose(&w.fsm, &w.talker);
+        if !same_view(&derived, &w.last_emitted) {
+            return Err(format!("t={t}: la vista emitida {:?} no coincide con la derivada {:?}", w.last_emitted, derived));
+        }
+        // «ausente» solo si el mundo lo está (y viceversa): nunca pegado ni inventado
+        let want = Away { locked: world.locked, suspended: world.suspended };
+        if w.sleep.away != want {
+            return Err(format!("t={t}: ausente={:?} pero el mundo dice {:?}", w.sleep.away, want));
+        }
+        if v.sleeping {
+            if w.last_emitted.message.is_some() || v.message.is_some() {
+                return Err(format!("t={t}: mensaje visible durmiendo: {v:?}"));
+            }
+            if w.fsm.is_running() {
+                // durmiendo y corriendo: el único plazo de la FSM es el paso sleepy → resting, y en el futuro
+                if let Some(d) = w.fsm.next_wakeup() {
+                    if d <= t {
+                        return Err(format!("t={t}: plazo de FSM durmiendo en el pasado ({d})"));
+                    }
+                    if v.expression != Expression::Sleepy {
+                        return Err(format!("t={t}: plazo de FSM durmiendo con la cara {:?}", v.expression));
+                    }
+                }
+            }
+        }
+        // sin plazos en el pasado (provocarían despertares en bucle)
+        if let Some(d) = next_deadline(w, t) {
+            if d <= t {
+                return Err(format!("t={t}: plazo del planificador en el pasado o ahora mismo ({d})"));
+            }
+        }
+        // coherencia de la puerta de sueño: `next` solo con la puerta abierta
+        match (w.sleep_gate(), w.sleep.next) {
+            (true, None) => return Err(format!("t={t}: puerta de sueño abierta sin próxima comprobación")),
+            (false, Some(n)) => return Err(format!("t={t}: puerta cerrada con comprobación pendiente ({n})")),
+            _ => {}
+        }
+        // recuperación: durmiendo con la puerta abierta, el sondeo ligero vence como mucho en WAKE_POLL (errores incluidos)
+        if v.sleeping && w.sleep_gate() {
+            let n = w.sleep.next.unwrap_or(0);
+            if n > t + sl::WAKE_POLL_MS {
+                return Err(format!("t={t}: durmiendo sin sondeo ligero a tiempo (próximo en {n})"));
+            }
+        }
+        // estado ausente ⇒ duerme (si el interruptor está activo)
+        if w.sleep.away.any() && w.sleep.enabled && !v.sleeping {
+            return Err(format!("t={t}: sesión ausente con el interruptor activo pero despierta"));
+        }
+        Ok(())
+    }
+
+    fn fuzz_one(seed: u64) -> Result<FuzzStats, String> {
+        let mut r = fastrand::Rng::with_seed(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xA5A5);
+        let afters = [1_000, 20_000, 5 * MIN, 10 * MIN, 15 * MIN, 30 * MIN, 60 * MIN];
+        let cfg = EngineConfig {
+            sleep_enabled: r.bool(),
+            sleep_after_ms: afters[r.usize(..afters.len())],
+            dnd_auto: r.bool(),
+            talker: TalkerConfig { cooldown: 1_000, initial_delay: (500, 500), ..TalkerConfig::default() },
+            seed: Some(seed),
+            ..EngineConfig::default()
+        };
+        let (mut w, clock, _host, probe) = sleep_worker(cfg);
+        let mut world = World { last_input: 0, probe_err: false, locked: false, suspended: false, notif_busy: false };
+        let mut stats = FuzzStats { deadline_ticks: 0, max_asleep_wakes_per_min: 0 };
+        let mut t: Ms = 0;
+        let mut asleep_wakes: std::collections::VecDeque<Ms> = Default::default();
+        let mut recent: std::collections::VecDeque<(Ms, usize)> = Default::default();
+
+        macro_rules! tick {
+            ($t:expr, $cmds:expr, $deadline:expr) => {{
+                let tt: Ms = $t;
+                probe.set_idle(if world.probe_err {
+                    Err(ProbeError::CallFailed)
+                } else {
+                    Ok(tt.saturating_sub(world.last_input))
+                });
+                probe.set_notification_state(Ok(if world.notif_busy { NotifState::Busy } else { NotifState::AcceptsNotifications }));
+                let before_calls = probe.idle_calls();
+                let gate_before = w.sleep_gate();
+                let views_before = _host.views.lock().unwrap().len();
+                at_with(&mut w, &clock, tt, $cmds);
+                let emitted = _host.views.lock().unwrap().len() - views_before;
+                if $deadline {
+                    stats.deadline_ticks += 1;
+                    if emitted > 1 {
+                        return Err(format!("t={tt}: un solo despertar emitió {emitted} vistas"));
+                    }
+                    // sin consultas con la puerta cerrada antes y después del paso
+                    if !gate_before && !w.sleep_gate() && probe.idle_calls() != before_calls {
+                        return Err(format!("t={tt}: se consultó la inactividad con la puerta cerrada"));
+                    }
+                    let asleep_still = w.fsm.is_sleeping() && !w.moving && w.fsm.is_running();
+                    if asleep_still {
+                        asleep_wakes.push_back(tt);
+                        while asleep_wakes.front().is_some_and(|a| tt - *a > 60_000) {
+                            asleep_wakes.pop_front();
+                        }
+                        // durmiendo: sondeo ligero ~30/min + sondeo de No molestar ~24/min (si está activado) = ~54/min
+                        if asleep_wakes.len() > 60 {
+                            return Err(format!("t={tt}: {} despertares en 60 s durmiendo (bucle)", asleep_wakes.len()));
+                        }
+                        stats.max_asleep_wakes_per_min = stats.max_asleep_wakes_per_min.max(asleep_wakes.len() as Ms);
+                    }
+                    recent.push_back((tt, emitted));
+                    while recent.front().is_some_and(|(a, _)| tt - *a > 2_000) {
+                        recent.pop_front();
+                    }
+                    let burst: usize = recent.iter().map(|(_, e)| e).sum();
+                    if burst > 6 {
+                        return Err(format!("t={tt}: ráfaga de {burst} vistas en 2 s por plazos"));
+                    }
+                }
+                fuzz_check(&w, &world, tt)?;
+            }};
+        }
+
+        tick!(0, vec![], false);
+        for _ in 0..140 {
+            // paso del tiempo: despertares por plazo hasta el siguiente suceso
+            let gap = match r.u8(..100) {
+                0..=69 => r.u64(0..4_000),
+                70..=94 => r.u64(4_000..20 * MIN),
+                _ => r.u64(MIN..3 * 60 * MIN),
+            };
+            let target = t + gap;
+            let mut guard = 0;
+            while let Some(d) = next_deadline(&w, t) {
+                if d > target {
+                    break;
+                }
+                guard += 1;
+                if guard > 200_000 {
+                    return Err(format!("t={t}: más de 200 000 despertares sin llegar a {target}"));
+                }
+                t = d.max(t);
+                tick!(t, vec![], true);
+            }
+            t = target.max(t);
+            // un suceso aleatorio
+            let ev = r.u8(..24);
+            let mut cmds: Vec<Cmd> = Vec::new();
+            match ev {
+                0 | 1 => world.last_input = t, // actividad real
+                2 => world.probe_err = !world.probe_err,
+                3 => {
+                    world.locked = true;
+                    cmds.push(Cmd::Session(SessionEvent::Locked));
+                }
+                4 => {
+                    world.locked = false;
+                    cmds.push(Cmd::Session(SessionEvent::Unlocked));
+                    world.last_input = t;
+                }
+                5 => {
+                    world.suspended = true;
+                    cmds.push(Cmd::Session(SessionEvent::Suspended));
+                }
+                6 => {
+                    world.suspended = false;
+                    cmds.push(Cmd::Session(SessionEvent::Resumed));
+                    world.last_input = t;
+                }
+                7 => cmds.push(Cmd::Hidden(r.bool())),
+                8 => cmds.push(Cmd::Pause(r.bool())),
+                9 => cmds.push(Cmd::TogglePause),
+                10 => cmds.push(Cmd::DndOverride),
+                11 => cmds.push(Cmd::FollowEnabled(r.bool())),
+                12 => cmds.push(Cmd::ToggleFollow),
+                13 => cmds.push(Cmd::SleepEnabled(r.bool())),
+                14 => cmds.push(Cmd::SleepAfter(afters[r.usize(..afters.len())])),
+                15 => cmds.push(Cmd::DndAuto(r.bool())),
+                16 => cmds.push(Cmd::Suppressed(r.bool())),
+                17 => world.notif_busy = !world.notif_busy,
+                18 => {
+                    // ráfaga: varias órdenes en el mismo instante, en orden aleatorio
+                    cmds.push(Cmd::Session(SessionEvent::Locked));
+                    world.locked = true;
+                    cmds.push(Cmd::Hidden(r.bool()));
+                    cmds.push(Cmd::Session(SessionEvent::Unlocked));
+                    world.locked = false;
+                    world.last_input = t;
+                    cmds.push(Cmd::Pause(r.bool()));
+                }
+                19 => {
+                    cmds.push(Cmd::Session(SessionEvent::Suspended));
+                    cmds.push(Cmd::Session(SessionEvent::Suspended)); // repetido
+                    world.suspended = true;
+                }
+                20 => {
+                    cmds.push(Cmd::Session(SessionEvent::Resumed));
+                    cmds.push(Cmd::Session(SessionEvent::Resumed)); // repetido
+                    world.suspended = false;
+                    world.last_input = t;
+                }
+                21 => {
+                    cmds.push(Cmd::Session(SessionEvent::Unlocked)); // desbloqueo sin bloqueo previo
+                    world.locked = false;
+                    world.last_input = t;
+                }
+                22 => cmds.push(Cmd::GeometryChanged), // reanudar / cambio de escala o de monitores
+                _ => {} // solo pasa el tiempo
+            }
+            tick!(t, cmds, false);
+        }
+        // final: viveza. Sin sesión ausente, con todo abierto y con actividad real, no puede seguir durmiendo.
+        let mut cmds = vec![Cmd::SleepEnabled(true), Cmd::SleepAfter(10 * MIN), Cmd::Hidden(false), Cmd::Pause(false), Cmd::DndAuto(false)];
+        if world.locked {
+            cmds.push(Cmd::Session(SessionEvent::Unlocked));
+            world.locked = false;
+        }
+        if world.suspended {
+            cmds.push(Cmd::Session(SessionEvent::Resumed));
+            world.suspended = false;
+        }
+        world.probe_err = false;
+        world.last_input = t;
+        tick!(t, cmds, false);
+        let end = t + 6_000;
+        while let Some(d) = next_deadline(&w, t) {
+            if d > end {
+                break;
+            }
+            t = d.max(t);
+            tick!(t, vec![], true);
+        }
+        if w.fsm.is_sleeping() && w.sleep_gate() {
+            return Err(format!("t={t}: tras actividad real y todo abierto, sigue durmiendo"));
+        }
+        Ok(stats)
+    }
+
+    fn fuzz_seqs() -> (u64, u64) {
+        if let Some(s) = std::env::var("MIEL_FUZZ_SEED").ok().and_then(|v| v.parse::<u64>().ok()) {
+            return (s, 1);
+        }
+        let n = std::env::var("MIEL_FUZZ_SEQS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(150);
+        (1, n)
+    }
+
+    #[test]
+    fn random_event_sequences_keep_the_sleep_invariants() {
+        let (first, n) = fuzz_seqs();
+        let mut failures: Vec<String> = Vec::new();
+        let mut ticks = 0u64;
+        let mut max_per_min = 0;
+        for seed in first..first + n {
+            match std::panic::catch_unwind(|| fuzz_one(seed)) {
+                Ok(Ok(s)) => {
+                    ticks += s.deadline_ticks;
+                    max_per_min = max_per_min.max(s.max_asleep_wakes_per_min);
+                }
+                Ok(Err(e)) => failures.push(format!("semilla {seed}: {e}")),
+                Err(_) => failures.push(format!("semilla {seed}: PÁNICO")),
+            }
+            if failures.len() >= 5 {
+                break;
+            }
+        }
+        println!("{n} secuencias, {ticks} despertares por plazo comprobados; máximo de despertares en 60 s durmiendo: {max_per_min}");
+        assert!(failures.is_empty(), "reproducir con MIEL_FUZZ_SEED=<semilla>:\n{}", failures.join("\n"));
+    }
+
+    /// LIMITACIÓN CONOCIDA (E5.1, hallazgo): si Windows no entrega el aviso de reanudación/desbloqueo (p. ej. Modern Standby
+    /// no siempre envía `PBT_APMRESUME*`), «ausente» queda pegado: duerme sin sondear y NO despierta con entrada real.
+    /// Esta prueba fija el comportamiento ACTUAL para documentarlo; la propuesta de autorreparación (docs/TEST_LOG.md, E5.1)
+    /// la invertiría. Ver el mecanismo propuesto allí.
+    #[test]
+    fn known_limitation_a_lost_resume_notice_keeps_the_session_absent_even_with_real_input() {
+        let (mut w, clock, _h, probe) = sleep_worker(sleep_cfg(10 * MIN));
+        probe.set_idle(Ok(0));
+        at(&mut w, &clock, 0);
+        at_with(&mut w, &clock, MIN, vec![Cmd::Session(SessionEvent::Suspended)]);
+        assert!(w.fsm.is_sleeping());
+        let calls = probe.idle_calls();
+        // una hora con la persona usando el equipo de verdad (lectura 0) y SIN aviso de reanudación
+        for k in 1..=60u64 {
+            probe.set_idle(Ok(0));
+            at(&mut w, &clock, MIN + k * MIN);
+        }
+        assert!(w.fsm.is_sleeping(), "sigue dormida pese a la entrada real: ausente pegado");
+        assert_eq!(probe.idle_calls(), calls, "y no se consulta nada: no hay forma de recuperarse sola");
+        assert_eq!(next_deadline(&w, 61 * MIN), None, "ningún plazo de sondeo");
+        // el siguiente aviso real (aquí, la reanudación tardía) la recupera
+        at_with(&mut w, &clock, 62 * MIN, vec![Cmd::Session(SessionEvent::Resumed)]);
+        assert!(!w.fsm.is_sleeping());
     }
 }

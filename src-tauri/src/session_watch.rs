@@ -61,6 +61,11 @@ unsafe extern "system" fn subclass_proc(
     // SAFETY: `data` es el puntero a `Callback` creado en `install`; solo se libera tras quitar la subclase con
     // éxito, y mientras esté instalada sigue siendo válido.
     let cb = unsafe { &*(data as *const Callback) };
+    if crate::DIAG && (msg == WM_POWERBROADCAST || msg == WM_WTSSESSION_CHANGE) {
+        // Solo diagnóstico: qué aviso de Windows llega (el código numérico, nada más) y cómo se interpreta.
+        let unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+        eprintln!("[miel] t={unix_ms} aviso de Windows msg=0x{msg:X} wparam={} -> {:?}", wparam.0, classify(msg, wparam.0));
+    }
     if let Some(ev) = classify(msg, wparam.0) {
         cb(ev);
     }

@@ -28,7 +28,13 @@ impl SystemProbe for WindowsProbe {
         let mut info = LASTINPUTINFO { cbSize: size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
         // SAFETY: `info` es un LASTINPUTINFO válido con `cbSize` correcto; GetTickCount no tiene precondiciones.
         let (ok, tick) = unsafe { (GetLastInputInfo(&mut info).as_bool(), GetTickCount()) };
-        idle_ms_from_ticks(tick, ok.then_some(info.dwTime))
+        let res = idle_ms_from_ticks(tick, ok.then_some(info.dwTime));
+        if crate::DIAG {
+            // Solo diagnóstico: los números crudos de cada lectura real (sin saber qué entrada fue).
+            let unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+            eprintln!("[miel] t={unix_ms} lectura real: ok={ok} tick={tick} dwTime={} resultado={res:?}", info.dwTime);
+        }
+        res
     }
 
     fn notification_state(&self) -> Result<NotifState, ProbeError> {
